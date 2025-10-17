@@ -1,0 +1,4 @@
+# This project is managed via UV; prefer `uv sync --all-extras --dev`.
+# requirements.txt kept for compatibility with pip-based workflows.
+
+httpx[http2]>=0.27.0

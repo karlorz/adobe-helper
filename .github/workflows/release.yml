@@ -1,0 +1,58 @@
+name: Release to PyPI
+
+on:
+  workflow_dispatch:
+  # push:
+  #   tags:
+  #     # Publish on any tag starting with a `v`, e.g., v0.1.0, v1.2.3
+  #     - v*
+
+jobs:
+  pypi:
+    name: Build and Publish to PyPI
+    runs-on: ubuntu-latest
+
+    # Environment and permissions for trusted publishing
+    environment:
+      # Create this environment in GitHub repository under Settings -> Environments
+      name: pypi
+      url: https://pypi.org/project/futunn-helper/
+
+    permissions:
+      # REQUIRED: This permission is mandatory for trusted publishing
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.11
+        run: uv python install 3.11
+
+      - name: Build package
+        run: uv build
+
+      - name: Check package metadata
+        run: |
+          uv run --isolated --no-project --with twine twine check dist/*
+
+      # Smoke test: Install and import the package from wheel
+      - name: Smoke test (wheel)
+        run: |
+          uv run --isolated --no-project --with dist/*.whl \
+            python -c "import futunn; print(f'futunn-helper v{futunn.__version__}')"
+
+      # Smoke test: Install and import the package from source distribution
+      - name: Smoke test (source distribution)
+        run: |
+          uv run --isolated --no-project --with dist/*.tar.gz \
+            python -c "import futunn; print(f'futunn-helper v{futunn.__version__}')"
+
+      - name: Publish to PyPI
+        run: uv publish

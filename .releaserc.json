@@ -1,0 +1,10 @@
+{
+  "branches": ["main"],
+  "repositoryUrl": "https://github.com/karlorz/futunn-helper",
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    "@semantic-release/github"
+  ]
+}
