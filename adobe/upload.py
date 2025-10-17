@@ -184,7 +184,9 @@ class FileUploader:
         request_id = generate_request_id()
         request_headers = self._augment_headers(headers, request_id)
         if resource:
-            request_headers["Accept"] = self._select_media_type(resource, "accept", "application/json")
+            request_headers["Accept"] = self._select_media_type(
+                resource, "accept", "application/json"
+            )
 
         logger.info("Uploading PDF via multipart to %s", upload_uri)
 
@@ -203,7 +205,10 @@ class FileUploader:
             logger.error("HTTP error during asset upload: %s", exc)
             raise UploadError(
                 ERROR_UPLOAD_FAILED.format(reason=f"HTTP {exc.response.status_code}"),
-                details={"status_code": exc.response.status_code, "response": exc.response.text[:500]},
+                details={
+                    "status_code": exc.response.status_code,
+                    "response": exc.response.text[:500],
+                },
             ) from exc
         except httpx.RequestError as exc:
             logger.error("Network error during asset upload: %s", exc)
@@ -275,7 +280,9 @@ class FileUploader:
             ) from exc
 
         links_container = init_data.get("_links") or {}
-        upload_links = links_container.get("upload_links") or links_container.get("uploadLinks") or []
+        upload_links = (
+            links_container.get("upload_links") or links_container.get("uploadLinks") or []
+        )
         if not upload_links:
             raise UploadError(
                 ERROR_UPLOAD_FAILED.format(reason="Upload links missing"),
@@ -439,7 +446,9 @@ class FileUploader:
             sleep_ms = payload.get("retry_interval", retry_interval_ms)
             await asyncio.sleep(max(1.0, sleep_ms / 1000.0))
 
-    def _augment_headers(self, base_headers: dict[str, str], request_id: str | None) -> dict[str, str]:
+    def _augment_headers(
+        self, base_headers: dict[str, str], request_id: str | None
+    ) -> dict[str, str]:
         if "Authorization" not in base_headers:
             raise UploadError("Authorization header missing", details={})
 

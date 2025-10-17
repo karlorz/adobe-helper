@@ -98,7 +98,8 @@ COMMON_HEADERS = {
 # these Client Hints the server responds with an HTTP/2 protocol error.
 SESSION_INIT_HEADERS = {
     "Accept": (
-        "text/html,application/xhtml+xml,application/xml;q=0.9," "image/avif,image/webp,image/apng,*/*;q=0.8,"
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8,"
         "application/signed-exchange;v=b3;q=0.7"
     ),
     "Accept-Language": "en-US,en;q=0.9",
@@ -254,10 +255,7 @@ def _write_discovery_file(path: Path, endpoints: dict[str, str], status: str) ->
     payload = {
         "discovery_date": datetime.now().isoformat(),
         "status": status,
-        "endpoints": {
-            key: {"url": endpoints.get(key, "")}
-            for key in _DISCOVERY_KEYS
-        },
+        "endpoints": {key: {"url": endpoints.get(key, "")} for key in _DISCOVERY_KEYS},
         "instructions": list(_DISCOVERY_INSTRUCTIONS),
     }
 

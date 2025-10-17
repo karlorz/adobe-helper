@@ -8,8 +8,8 @@ authentication with Adobe's online services.
 import json
 import logging
 from datetime import datetime, timedelta
-from secrets import token_hex
 from pathlib import Path
+from secrets import token_hex
 
 import httpx
 
@@ -196,9 +196,7 @@ class SessionManager:
                 )
 
                 if response.status_code == 403 and attempt == 0:
-                    logger.warning(
-                        "IMS returned 403; refreshing session context before retry"
-                    )
+                    logger.warning("IMS returned 403; refreshing session context before retry")
                     await self._refresh_session_context()
                     continue
 

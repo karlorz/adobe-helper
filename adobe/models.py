@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -42,12 +41,8 @@ class ConversionJob(BaseModel):
         description="Unique identifier for the conversion job (legacy flow)",
         deprecated=True,
     )
-    job_uri: str | None = Field(
-        None, description="URI returned by Adobe for the conversion job"
-    )
-    asset_uri: str | None = Field(
-        None, description="Asset URI for uploaded or converted resources"
-    )
+    job_uri: str | None = Field(None, description="URI returned by Adobe for the conversion job")
+    asset_uri: str | None = Field(None, description="Asset URI for uploaded or converted resources")
     status: ConversionStatus = Field(
         default=ConversionStatus.PENDING, description="Current status of the job"
     )

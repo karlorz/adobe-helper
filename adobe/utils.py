@@ -9,8 +9,8 @@ import json
 import random
 import time
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from adobe.constants import PDF_MAGIC_BYTES
 from adobe.urls import USER_AGENTS
