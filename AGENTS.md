@@ -4,28 +4,79 @@
 
 ## Project Overview
 
-This is a **Futunn API Client** library inspired by the architecture of `py-googletrans`. The goal is to create an asynchronous Python client that fetches stock market data from Futunn's quote API endpoints.
+This is an **Adobe PDF-to-Word Helper** library inspired by the architecture of Adobe's online PDF conversion service. The goal is to create a Python client that converts PDF files to DOCX format using Adobe's online conversion workflow.
 
-**Target API:** `https://www.futunn.com/quote-api/quote-v2/get-stock-list`
+**Target Service:** `https://www.adobe.com/acrobat/online/pdf-to-word.html`
 
-**Reference Architecture:** `ssut/py-googletrans` - Uses `httpx.AsyncClient` with `asyncio` for concurrent HTTP requests.
+**Reference Architecture:** Adobe Acrobat Online - Uses Unity workflow system with file upload, conversion processing, and download capabilities.
 
 ## Key Features
 
-- Async `httpx.AsyncClient` architecture with full awaitable API surface
-- Built-in concurrency controls for fetching multiple pages in parallel
-- Automatic token acquisition and refresh flow for Futunn endpoints
-  - CSRF token sourced from response cookies
-  - Quote-token generated via HMAC-SHA512/“quote_web” secret + SHA256 truncation
-- Typed dataclass models for stocks, pagination, and responses
-- Custom error hierarchy covering API failures, auth refresh, and rate limiting
+- File upload mechanism (drag-and-drop or file selection)
+- PDF to DOCX conversion via Adobe's online service
+- Session management and authentication
+- Download converted files
+- Support for various PDF sizes and formats
+- Error handling and status tracking
+
+## Architecture Analysis (From Chrome DevTools Study)
+
+### Adobe's Workflow System
+
+Based on network analysis, Adobe uses a sophisticated workflow system:
+
+1. **Unity Workflow Framework** (`/unitylibs/core/workflow/`)
+   - `workflow.js` - Main workflow orchestrator
+   - `workflow-acrobat/` - Acrobat-specific workflows
+   - Supported features include: pdf-to-word, pdf-to-excel, pdf-to-ppt, etc.
+
+2. **Key Components:**
+   - **Interactive Area** - File upload drop zone
+   - **Action Binder** - Binds user actions to workflow steps
+   - **Target Config** - Configuration for each conversion type
+   - **Widget System** - UI components for file handling
+
+3. **Workflow Steps:**
+   ```
+   1. User selects/drops PDF file
+   2. File upload to Adobe servers (HTTPS/TLS 1.2, AES-256 encryption)
+   3. Server-side conversion process
+   4. Download converted DOCX file
+   ```
+
+### Authentication & Security
+
+- **IMS (Identity Management Services)** - Adobe's auth system
+- **Session tokens** - Managed via cookies and headers
+- **CSRF protection** - Token-based security
+- **Encryption** - Files secured using HTTPS w/TLS 1.2 and stored using AES-256
+
+### API Endpoints Discovered
+
+Key endpoints from network analysis:
+```
+- https://www.adobe.com/unitylibs/core/workflow/workflow-acrobat/
+- https://acroipm2.adobe.com/acrobat-web/machine/unity-dc-frictionless/
+- IMS authentication endpoints (adobeid-na1.services.adobe.com)
+- Asset upload (multipart form-data): https://pdfnow-<region>.adobe.io/<tenant>/assets
+  * Requires `Authorization: Bearer <guest token>` and optional block-upload initialize/finalize APIs
+  * Response includes `asset_id`/`asset_uri` used by subsequent export requests
+- Export job submission: https://pdfnow-<region>.adobe.io/<tenant>/assets/exportpdf (POST JSON with `asset_uri`)
+- Job status polling: https://pdfnow-<region>.adobe.io/<tenant>/jobs/status?job_uri=...
+- Download URI negotiation: https://pdfnow-<region>.adobe.io/<tenant>/assets/download_uri?asset_uri=...
+```
+
+**Important:** Browser sessions surface an `asset_uri` in the URL fragment (`#assets=...`), but the backend still expects the asset bytes to be uploaded via the `/assets` endpoint before calling `exportpdf`. Our client must reproduce that upload step to obtain a valid `asset_uri`.
+```
+
+---
 
 ## Quick Start (UV-Based Setup)
 
 ```bash
 # Clone repository
-git clone https://github.com/karlorz/futunn-helper.git
-cd futunn-helper
+git clone https://github.com/karlorz/adobe-helper.git
+cd adobe-helper
 
 # Install UV (if missing) and sync project deps
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -48,28 +99,30 @@ pytest
 
 ---
 
-## Architecture Design
+## Proposed Architecture Design
 
-### Core Components (Inspired by py-googletrans)
+### Core Components
 
 ```
-futunn-helper/
-├── futunn/
+adobe-helper/
+├── adobe/
 │   ├── __init__.py
-│   ├── client.py          # Main FutunnClient class (like Translator)
-│   ├── token.py           # TokenManager class (like TokenAcquirer)
-│   ├── models.py          # Data models (Stock, StockList, Pagination)
+│   ├── client.py          # Main AdobePDFConverter class
+│   ├── auth.py            # Authentication & session management
+│   ├── upload.py          # File upload handler
+│   ├── conversion.py      # Conversion workflow manager
+│   ├── download.py        # File download handler
+│   ├── models.py          # Data models (ConversionJob, FileInfo)
 │   ├── urls.py            # API endpoint constants
-│   ├── constants.py       # Market types, rank types, etc.
-│   └── utils.py           # Helper functions (format_response, etc.)
+│   ├── constants.py       # Conversion types, status codes
+│   └── utils.py           # Helper functions
 ├── examples/
 │   ├── basic_usage.py
-│   ├── bulk_fetch.py
-│   └── real_time_monitor.py
+│   ├── batch_convert.py
+│   └── async_convert.py
 ├── tests/
 │   └── test_client.py
-├── requirements.txt
-├── setup.py
+├── pyproject.toml
 ├── README.md
 └── AGENTS.md              # This file
 ```
@@ -80,283 +133,342 @@ futunn-helper/
 
 ### 1. HTTP Client Architecture
 
-**Follow py-googletrans pattern:**
+**Similar to Adobe's workflow:**
 
-- Use `httpx.AsyncClient` for all HTTP requests
-- Implement async/await throughout
-- Support HTTP/2 and proxy configuration
-- Handle rate limiting with `asyncio.Semaphore`
-
-**Example Pattern:**
 ```python
-class FutunnClient:
-    def __init__(self, service_urls=None, proxies=None, timeout=10):
+import httpx
+from typing import Optional
+from pathlib import Path
+
+class AdobePDFConverter:
+    def __init__(self, session_dir: Optional[Path] = None):
         self.client = httpx.AsyncClient(
             http2=True,
-            proxies=proxies,
-            timeout=timeout,
-            follow_redirects=True
+            timeout=300.0,  # Conversion may take time
+            follow_redirects=True,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+                'Accept': 'application/json, text/plain, */*',
+            }
         )
-        self.token_manager = TokenManager(self.client)
+        self.session_manager = SessionManager(self.client, session_dir)
+        self.uploader = FileUploader(self.client)
+        self.converter = ConversionManager(self.client)
+        self.downloader = FileDownloader(self.client)
 ```
 
-### 2. Token Management
+### 2. Session & Authentication Management
 
-**Required Headers for Futunn API:**
+**Adobe uses IMS authentication:**
+
 ```python
-Headers are generated per request by the token manager:
+class SessionManager:
+    def __init__(self, client: httpx.AsyncClient, session_dir: Optional[Path]):
+        self.client = client
+        self.session_dir = session_dir or Path.home() / '.adobe-helper'
+        self.session_file = self.session_dir / 'session.json'
+        self.csrf_token = None
+        self.session_id = None
 
-- `futu-x-csrf-token` — extracted from the `csrfToken` cookie
-- `quote-token` — computed as `SHA256(HMAC_SHA512(payload or "quote", "quote_web"))[0:10]`
-- `referer` — Futunn stock list page
-- `user-agent` — desktop browser UA string
+    async def initialize(self):
+        """Initialize session by visiting the PDF-to-Word page"""
+        # Visit main page to get cookies and CSRF token
+        response = await self.client.get(
+            'https://www.adobe.com/acrobat/online/pdf-to-word.html'
+        )
+        # Extract CSRF token from cookies or response
+        self.extract_tokens(response)
+
+    def extract_tokens(self, response):
+        """Extract CSRF and session tokens"""
+        # Parse cookies and headers for security tokens
+        pass
 ```
 
-**Token Acquisition Strategy:**
-- `TokenManager` visits the Futunn stock list page to capture the `csrfToken` cookie (cached until invalidated)
-- Each API call signs its params/body using the Futunn web client algorithm (`quote-token` HMAC + SHA256 truncation)
-- Tokens are regenerated automatically on 403 responses or explicit refresh
+### 3. File Upload Handler
 
-### 3. Async Request Handling
-
-**Single Request:**
 ```python
-async def get_stock_list(
-    self,
-    market_type: int = 2,      # 2 = US market
-    plate_type: int = 1,       # 1 = all stocks
-    rank_type: int = 5,        # 5 = top turnover
-    page: int = 0,
-    page_size: int = 50
-) -> StockList:
-    params = {
-        'marketType': market_type,
-        'plateType': plate_type,
-        'rankType': rank_type,
-        'page': page,
-        'pageSize': page_size
-    }
+class FileUploader:
+    def __init__(self, client: httpx.AsyncClient):
+        self.client = client
 
-    url = urls.GET_STOCK_LIST.format(host=self._pick_service_url())
-    response = await self.client.get(url, params=params, headers=self.headers)
+    async def upload_pdf(
+        self,
+        file_path: Path,
+        csrf_token: str
+    ) -> str:
+        """
+        Upload PDF file to Adobe servers
 
-    if response.status_code == 200:
-        data = response.json()
-        return StockList.from_dict(data)
-    else:
-        raise FutunnAPIError(f"API returned {response.status_code}")
+        Returns:
+            upload_id: Unique identifier for the uploaded file
+        """
+        with open(file_path, 'rb') as f:
+            files = {'file': (file_path.name, f, 'application/pdf')}
+            headers = {
+                'X-CSRF-Token': csrf_token,
+            }
+
+            response = await self.client.post(
+                'https://www.adobe.com/dc-api/upload',  # Example endpoint
+                files=files,
+                headers=headers
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return data['uploadId']
+            else:
+                raise UploadError(f"Upload failed: {response.status_code}")
 ```
 
-**Bulk/Concurrent Requests:**
+### 4. Conversion Workflow Manager
+
 ```python
-async def get_multiple_pages(self, pages: List[int]) -> List[StockList]:
-    semaphore = asyncio.Semaphore(self.concurrency_limit)
+class ConversionManager:
+    def __init__(self, client: httpx.AsyncClient):
+        self.client = client
 
-    async def fetch_with_semaphore(page: int):
-        async with semaphore:
-            return await self.get_stock_list(page=page)
+    async def start_conversion(
+        self,
+        upload_id: str,
+        conversion_type: str = 'pdf-to-word'
+    ) -> ConversionJob:
+        """
+        Initiate PDF to DOCX conversion
 
-    tasks = [fetch_with_semaphore(page) for page in pages]
-    results = await asyncio.gather(*tasks)
-    return results
+        Returns:
+            ConversionJob with job_id and status
+        """
+        payload = {
+            'uploadId': upload_id,
+            'targetFormat': 'docx',
+            'feature': conversion_type
+        }
+
+        response = await self.client.post(
+            'https://www.adobe.com/dc-api/convert',  # Example endpoint
+            json=payload
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            return ConversionJob(
+                job_id=data['jobId'],
+                status=data['status'],
+                upload_id=upload_id
+            )
+        else:
+            raise ConversionError(f"Conversion failed: {response.status_code}")
+
+    async def check_status(self, job_id: str) -> dict:
+        """Poll conversion status"""
+        response = await self.client.get(
+            f'https://www.adobe.com/dc-api/status/{job_id}'
+        )
+        return response.json()
+
+    async def wait_for_completion(
+        self,
+        job_id: str,
+        poll_interval: float = 2.0,
+        timeout: float = 300.0
+    ) -> dict:
+        """Wait for conversion to complete"""
+        import asyncio
+        start_time = asyncio.get_event_loop().time()
+
+        while True:
+            status = await self.check_status(job_id)
+
+            if status['state'] == 'completed':
+                return status
+            elif status['state'] == 'failed':
+                raise ConversionError(f"Conversion failed: {status.get('error')}")
+
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                raise TimeoutError(f"Conversion timed out after {timeout}s")
+
+            await asyncio.sleep(poll_interval)
 ```
 
-### 4. Data Models
+### 5. File Download Handler
 
-**Use dataclasses or Pydantic for type safety:**
+```python
+class FileDownloader:
+    def __init__(self, client: httpx.AsyncClient):
+        self.client = client
+
+    async def download_file(
+        self,
+        download_url: str,
+        output_path: Path
+    ) -> Path:
+        """
+        Download converted DOCX file
+
+        Returns:
+            Path to downloaded file
+        """
+        async with self.client.stream('GET', download_url) as response:
+            response.raise_for_status()
+
+            with open(output_path, 'wb') as f:
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    f.write(chunk)
+
+        return output_path
+```
+
+### 6. Data Models
 
 ```python
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
+from enum import Enum
+
+class ConversionStatus(str, Enum):
+    PENDING = 'pending'
+    PROCESSING = 'processing'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
 
 @dataclass
-class Stock:
-    stock_id: int
-    name: str
-    stock_code: str
-    market_label: str
-    price_nominal: str
-    change_ratio: str
-    trade_turnover: str
-    market_val: str
-    # ... more fields
+class ConversionJob:
+    job_id: str
+    status: ConversionStatus
+    upload_id: str
+    download_url: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
-    @classmethod
-    def from_dict(cls, data: dict) -> 'Stock':
-        return cls(
-            stock_id=data['stockId'],
-            name=data['name'],
-            stock_code=data['stockCode'],
-            # ... map all fields
+@dataclass
+class FileInfo:
+    file_path: Path
+    file_name: str
+    file_size: int
+    mime_type: str = 'application/pdf'
+```
+
+### 7. Main Client Interface
+
+```python
+class AdobePDFConverter:
+    async def convert_pdf_to_word(
+        self,
+        pdf_path: Path,
+        output_path: Optional[Path] = None,
+        wait: bool = True
+    ) -> Path:
+        """
+        Convert PDF to Word (DOCX)
+
+        Args:
+            pdf_path: Path to input PDF file
+            output_path: Path for output DOCX file (optional)
+            wait: Wait for conversion to complete (default: True)
+
+        Returns:
+            Path to converted DOCX file
+        """
+        # 1. Initialize session if needed
+        if not self.session_manager.is_active():
+            await self.session_manager.initialize()
+
+        # 2. Upload PDF file
+        upload_id = await self.uploader.upload_pdf(
+            pdf_path,
+            self.session_manager.csrf_token
         )
 
-@dataclass
-class Pagination:
-    page: int
-    page_size: int
-    page_count: int
-    total: int
+        # 3. Start conversion
+        job = await self.converter.start_conversion(upload_id)
 
-@dataclass
-class StockList:
-    pagination: Pagination
-    stocks: List[Stock]
+        # 4. Wait for completion (if requested)
+        if wait:
+            status = await self.converter.wait_for_completion(job.job_id)
+            download_url = status['downloadUrl']
+        else:
+            return job  # Return job for async tracking
 
-    @classmethod
-    def from_dict(cls, data: dict) -> 'StockList':
-        return cls(
-            pagination=Pagination(**data['data']['pagination']),
-            stocks=[Stock.from_dict(item) for item in data['data']['list']]
+        # 5. Download converted file
+        if output_path is None:
+            output_path = pdf_path.with_suffix('.docx')
+
+        result_path = await self.downloader.download_file(
+            download_url,
+            output_path
         )
+
+        return result_path
 ```
-
-### 5. Constants and Configuration
-
-**urls.py:**
-```python
-# API endpoints
-BASE_URL = "https://www.futunn.com"
-GET_STOCK_LIST = BASE_URL + "/quote-api/quote-v2/get-stock-list"
-GET_INDEX_QUOTE = BASE_URL + "/quote-api/quote-v2/get-index-quote"
-GET_INDEX_SPARK_DATA = BASE_URL + "/quote-api/quote-v2/get-index-spark-data"
-```
-
-**constants.py:**
-```python
-from dataclasses import dataclass
-
-# Market types (API identifiers)
-MARKET_TYPE_HK = 1
-MARKET_TYPE_US = 2
-MARKET_TYPE_CN = 4
-MARKET_TYPE_SG = 15
-MARKET_TYPE_AU = 22
-MARKET_TYPE_JP = 25
-MARKET_TYPE_MY = 27
-MARKET_TYPE_CA = 30
-
-@dataclass(frozen=True)
-class MarketInfo:
-    code: str
-    slug: str
-    name: str
-    market_type: int
-
-MARKETS: dict[str, MarketInfo] = {
-    "US": MarketInfo(code="US", slug="us", name="United States", market_type=MARKET_TYPE_US),
-    # ... remaining markets (HK, CN, SG, AU, JP, MY, CA)
-}
-
-SUPPORTED_MARKET_TYPES = frozenset(info.market_type for info in MARKETS.values())
-
-def resolve_market_type(value: int | str | MarketInfo) -> int:
-    """Accepts numeric IDs, market codes ("US"), slugs ("us"), or MarketInfo objects."""
-    ...
-
-# Plate types
-PLATE_TYPE_ALL = 1
-
-# Rank types
-RANK_TYPE_TOP_TURNOVER = 5
-RANK_TYPE_TOP_GAINERS = 1
-RANK_TYPE_TOP_LOSERS = 2
-```
-
-**Usage tip:** `MARKETS` provides human-friendly metadata (code, slug, display name, API id) for all eight supported exchanges. Pass either a `MarketInfo`, string code/slug, or raw integer to any client method; `resolve_market_type` normalizes the input before hitting the Futunn API.
-
----
-
-## API Response Structure
-
-### Successful Response
-```json
-{
-  "code": 0,
-  "message": "成功",
-  "data": {
-    "pagination": {
-      "page": 0,
-      "pageSize": 50,
-      "pageCount": 215,
-      "total": 10718
-    },
-    "list": [
-      {
-        "stockId": 202805,
-        "name": "标普500ETF-SPDR",
-        "stockCode": "SPY",
-        "marketLabel": "US",
-        "priceNominal": "653.020",
-        "changeRatio": "-2.70%",
-        "tradeTrunover": "1054.49亿",
-        ...
-      }
-    ]
-  }
-}
-```
-
-### Error Handling
-- `code: 0` = Success
-- `code: -1` or other = Error
-- HTTP 403 = Token expired or missing
-- HTTP 429 = Rate limited
 
 ---
 
 ## Example Usage Patterns
 
 ### Basic Usage
+
 ```python
 import asyncio
-from futunn import FutunnClient
+from pathlib import Path
+from adobe import AdobePDFConverter
 
 async def main():
-    client = FutunnClient()
+    # Initialize converter
+    converter = AdobePDFConverter()
 
-    # Fetch top turnover US stocks
-    stock_list = await client.get_stock_list(
-        market_type=2,      # US market
-        rank_type=5,        # Top turnover
-        page_size=50
-    )
+    # Convert PDF to Word
+    pdf_file = Path('document.pdf')
+    docx_file = await converter.convert_pdf_to_word(pdf_file)
 
-    print(f"Total stocks: {stock_list.pagination.total}")
-    for stock in stock_list.stocks[:10]:
-        print(f"{stock.stock_code}: {stock.name} - ${stock.price_nominal}")
+    print(f"Converted: {docx_file}")
+
+    # Clean up
+    await converter.close()
 
 asyncio.run(main())
 ```
 
-### Bulk Fetching (Multiple Pages)
+### Batch Conversion
+
 ```python
-async def fetch_all_pages():
-    client = FutunnClient(concurrency_limit=5)
+async def batch_convert():
+    converter = AdobePDFConverter()
 
-    # Fetch first 10 pages concurrently
-    pages = range(0, 10)
-    results = await client.get_multiple_pages(list(pages))
+    pdf_files = Path('.').glob('*.pdf')
 
-    all_stocks = []
-    for result in results:
-        all_stocks.extend(result.stocks)
+    tasks = [
+        converter.convert_pdf_to_word(pdf_file)
+        for pdf_file in pdf_files
+    ]
 
-    print(f"Fetched {len(all_stocks)} stocks")
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-asyncio.run(fetch_all_pages())
+    for pdf_file, result in zip(pdf_files, results):
+        if isinstance(result, Exception):
+            print(f"Failed: {pdf_file} - {result}")
+        else:
+            print(f"Success: {pdf_file} -> {result}")
+
+    await converter.close()
+
+asyncio.run(batch_convert())
 ```
 
-### Real-time Monitoring
+### Context Manager Usage
+
 ```python
-async def monitor_stocks(interval=5):
-    client = FutunnClient()
+async def convert_with_context():
+    async with AdobePDFConverter() as converter:
+        result = await converter.convert_pdf_to_word(
+            Path('input.pdf'),
+            Path('output.docx')
+        )
+        print(f"Converted: {result}")
 
-    while True:
-        stock_list = await client.get_stock_list()
-        print(f"[{datetime.now()}] Top stock: {stock_list.stocks[0].stock_code}")
-        await asyncio.sleep(interval)
-
-asyncio.run(monitor_stocks())
+asyncio.run(convert_with_context())
 ```
 
 ---
@@ -364,22 +476,26 @@ asyncio.run(monitor_stocks())
 ## Development Workflow
 
 ### Phase 1: Core Implementation
-1. Create `futunn/client.py` with `FutunnClient` class
-2. Create `futunn/token.py` with `TokenManager` class
-3. Create `futunn/models.py` with data models
-4. Create `futunn/urls.py` and `futunn/constants.py`
+1. Create `adobe/client.py` with `AdobePDFConverter` class
+2. Create `adobe/auth.py` with `SessionManager` class
+3. Create `adobe/upload.py` with `FileUploader` class
+4. Create `adobe/conversion.py` with `ConversionManager` class
+5. Create `adobe/download.py` with `FileDownloader` class
+6. Create `adobe/models.py` with data models
 
 ### Phase 2: Testing
-1. Write unit tests for token acquisition
-2. Test single API request
-3. Test concurrent requests with rate limiting
-4. Test error handling (403, 429, timeouts)
+1. Write unit tests for session management
+2. Test file upload with small PDFs
+3. Test conversion workflow
+4. Test download functionality
+5. Test error handling (timeouts, failures, invalid files)
 
 ### Phase 3: Features
-1. Add support for different market types (HK, CN)
-2. Add support for different ranking types (gainers, losers)
-3. Add caching layer to reduce API calls
+1. Add support for batch conversions
+2. Add progress callbacks
+3. Add caching for converted files
 4. Add retry logic with exponential backoff
+5. Add support for other conversion types (PDF to Excel, PPT, etc.)
 
 ### Phase 4: Documentation & Examples
 1. Write comprehensive README.md
@@ -387,120 +503,28 @@ asyncio.run(monitor_stocks())
 3. Add docstrings to all public methods
 4. Create API documentation
 
-## Support Resources for Agents
-
-- When you need up-to-date documentation on Futunn APIs, Python packaging, or related tooling, use the Context7 MCP integration (`context7___resolve-library-id` followed by `context7___get-library-docs`) to retrieve the latest references.
-- For quick-start guidance on Python package publishing workflows, query DeepWiki (`deepwiki___ask_question`) to pull concise setup and release instructions.
-
----
-
-## Development Environment with UV
-
-This project uses **UV** for dependency management and **Trusted Publishing** for secure PyPI releases.
-
-### UV Setup (Quick Start)
-
-```bash
-# Install UV
-curl -LsSf https://astral.sh/uv/install.sh | sh  # macOS/Linux
-# or
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"  # Windows
-
-# Setup development environment
-uv python install 3.11
-uv sync --all-extras --dev
-```
-
-### UV Commands
-
-```bash
-# Run code
-uv run python examples/basic_usage.py
-uv run pytest
-
-# Build package
-uv build
-
-# Publish (with trusted publishing)
-uv publish
-```
-
-### Manual CLI Reference
-
-```bash
-# Tests
-uv run pytest tests/ -v
-uv run pytest --cov=futunn --cov-report=html
-
-# Quality checks
-uv run ruff check futunn/ examples/
-uv run black futunn/ examples/
-uv run mypy futunn/
-
-# Examples
-uv run python examples/basic_usage.py
-uv run python examples/bulk_fetch.py
-
-# Build & validation
-uv build
-uv run twine check dist/*
-```
-
-### Why UV?
-
-- **Fast**: 10-100x faster than pip
-- **Reliable**: Lock file ensures reproducible builds
-- **Simple**: Single tool for everything (venv, deps, build, publish)
-- **Modern**: Built in Rust, designed for modern Python workflows
-
-### Project Configuration (pyproject.toml)
-
-The project uses `pyproject.toml` instead of `setup.py` + `requirements.txt`:
-
-```toml
-[project]
-name = "futunn-helper"
-version = "0.1.0"
-dependencies = ["httpx[http2]>=0.27.0"]
-
-[tool.uv]
-dev-dependencies = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "ruff>=0.7.1",
-    "black>=24.0.0"
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-```
-
 ---
 
 ## Dependencies
 
 **Required packages:**
-```
-httpx[http2]>=0.27.0 # Async HTTP client with HTTP/2 support + h2 extras
-asyncio              # Built-in async support
-dataclasses          # Built-in for Python 3.7+
-typing               # Built-in type hints
-```
+```toml
+[project]
+dependencies = [
+    "httpx[http2]>=0.27.0",  # Async HTTP client with HTTP/2 support
+    "pydantic>=2.0.0",        # Data validation
+    "python-dotenv>=1.0.0",   # Environment configuration
+]
 
-**Development packages (installed with uv):**
-```
-pytest>=8.0          # For testing
-pytest-asyncio>=0.23 # For async tests
-ruff>=0.7.1          # Fast linter
-black>=24.0.0        # Code formatter
-mypy>=1.8.0          # Type checker
-```
-
-**Optional packages:**
-```
-pydantic>=2.0        # For advanced data validation
-aiofiles>=23.0       # For async file I/O
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.7.1",
+    "black>=24.0.0",
+    "mypy>=1.8.0",
+]
 ```
 
 ---
@@ -512,46 +536,54 @@ aiofiles>=23.0       # For async file I/O
 - Use `asyncio.gather()` for concurrent operations
 - Implement proper error handling in async contexts
 
-### 2. Rate Limiting
-- Default concurrency limit: 5 concurrent requests
-- Use `asyncio.Semaphore` to enforce limits
-- Implement exponential backoff on 429 errors
+### 2. Session Management
+- Cache session tokens in memory and optionally on disk
+- Refresh tokens before expiration
+- Handle 401/403 responses gracefully
 
-### 3. Token Management
-- Cache tokens in memory
-- Refresh tokens on 403 responses
-- Don't hardcode tokens - fetch dynamically
+### 3. File Handling
+- Validate PDF files before upload
+- Stream large files during upload/download
+- Clean up temporary files
 
 ### 4. Error Handling
 ```python
-class FutunnAPIError(Exception):
-    """Base exception for Futunn API errors"""
+class AdobeHelperError(Exception):
+    """Base exception for Adobe Helper"""
     pass
 
-class TokenExpiredError(FutunnAPIError):
-    """Raised when token is expired"""
+class AuthenticationError(AdobeHelperError):
+    """Raised when authentication fails"""
     pass
 
-class RateLimitError(FutunnAPIError):
-    """Raised when rate limited"""
+class UploadError(AdobeHelperError):
+    """Raised when file upload fails"""
+    pass
+
+class ConversionError(AdobeHelperError):
+    """Raised when conversion fails"""
+    pass
+
+class DownloadError(AdobeHelperError):
+    """Raised when download fails"""
     pass
 ```
 
-### 5. Type Hints
-- Use type hints for all function signatures
-- Use `typing.Optional` for nullable fields
-- Use `typing.List`, `typing.Dict` for collections
+### 5. Rate Limiting
+- Implement rate limiting to respect Adobe's servers
+- Use `asyncio.Semaphore` to limit concurrent requests
+- Add exponential backoff on 429 errors
 
 ### 6. Logging
 ```python
 import logging
 
-logger = logging.getLogger('futunn')
+logger = logging.getLogger('adobe-helper')
 logger.setLevel(logging.INFO)
 
 # Usage
-logger.info(f"Fetching stock list: page={page}")
-logger.error(f"API error: {response.status_code}")
+logger.info(f"Uploading file: {file_path}")
+logger.error(f"Conversion failed: {error}")
 ```
 
 ---
@@ -559,16 +591,16 @@ logger.error(f"API error: {response.status_code}")
 ## Testing Strategy
 
 ### Unit Tests
-- Test token acquisition logic
-- Test parameter building
+- Test session token management
+- Test file validation
 - Test response parsing
 - Test error handling
 
 ### Integration Tests
-- Test actual API calls (with rate limiting)
-- Test pagination
-- Test concurrent requests
-- Test token refresh flow
+- Test actual file upload (with small test PDFs)
+- Test conversion workflow
+- Test file download
+- Test session refresh
 
 ### Mock Testing
 ```python
@@ -576,65 +608,334 @@ import pytest
 from unittest.mock import AsyncMock
 
 @pytest.mark.asyncio
-async def test_get_stock_list():
-    client = FutunnClient()
-    client.client.get = AsyncMock(return_value=mock_response)
+async def test_convert_pdf():
+    converter = AdobePDFConverter()
+    converter.client.post = AsyncMock(return_value=mock_response)
 
-    result = await client.get_stock_list()
-    assert len(result.stocks) == 50
+    result = await converter.convert_pdf_to_word(Path('test.pdf'))
+    assert result.exists()
+```
+
+---
+
+## Bypassing Login/Registration Requirements
+
+Adobe's online tools often require user login after a certain number of conversions. Here are strategies to handle this:
+
+### Strategy 1: Anonymous Session Cycling
+
+```python
+class AnonymousSessionManager:
+    """Manage anonymous sessions by cycling through fresh sessions"""
+
+    def __init__(self, max_conversions_per_session: int = 2):
+        self.max_conversions = max_conversions_per_session
+        self.conversion_count = 0
+        self.session_pool = []
+
+    async def get_fresh_session(self):
+        """Create a new anonymous session"""
+        client = httpx.AsyncClient(
+            http2=True,
+            headers={
+                'User-Agent': self._get_random_user_agent(),
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
+        )
+
+        # Visit the main page to establish cookies
+        await client.get('https://www.adobe.com/acrobat/online/pdf-to-word.html')
+
+        return client
+
+    async def should_refresh_session(self):
+        """Check if we need a new session"""
+        self.conversion_count += 1
+        if self.conversion_count >= self.max_conversions:
+            self.conversion_count = 0
+            return True
+        return False
+
+    def _get_random_user_agent(self):
+        """Rotate user agents to appear as different users"""
+        user_agents = [
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+        ]
+        import random
+        return random.choice(user_agents)
+```
+
+### Strategy 2: Cookie Management
+
+```python
+import json
+from pathlib import Path
+
+class CookieManager:
+    """Manage cookies to simulate different sessions"""
+
+    def __init__(self, cookie_dir: Path = None):
+        self.cookie_dir = cookie_dir or Path.home() / '.adobe-helper' / 'cookies'
+        self.cookie_dir.mkdir(parents=True, exist_ok=True)
+
+    async def save_cookies(self, client: httpx.AsyncClient, session_id: str):
+        """Save cookies for reuse"""
+        cookie_file = self.cookie_dir / f'{session_id}.json'
+        cookies = {c.name: c.value for c in client.cookies.jar}
+        with open(cookie_file, 'w') as f:
+            json.dump(cookies, f)
+
+    async def load_cookies(self, client: httpx.AsyncClient, session_id: str):
+        """Load saved cookies"""
+        cookie_file = self.cookie_dir / f'{session_id}.json'
+        if cookie_file.exists():
+            with open(cookie_file, 'r') as f:
+                cookies = json.load(f)
+                for name, value in cookies.items():
+                    client.cookies.set(name, value)
+
+    def clear_old_sessions(self, max_age_days: int = 7):
+        """Clean up old cookie files"""
+        import time
+        current_time = time.time()
+        for cookie_file in self.cookie_dir.glob('*.json'):
+            if current_time - cookie_file.stat().st_mtime > max_age_days * 86400:
+                cookie_file.unlink()
+```
+
+### Strategy 3: Headless Browser Automation (Fallback)
+
+If the web service becomes too restrictive, use browser automation:
+
+```python
+from playwright.async_api import async_playwright
+
+class BrowserBasedConverter:
+    """Use headless browser to bypass JavaScript checks"""
+
+    async def convert_with_browser(self, pdf_path: Path, output_path: Path):
+        async with async_playwright() as p:
+            # Launch browser in headless mode
+            browser = await p.chromium.launch(headless=True)
+
+            # Create new page with random viewport
+            context = await browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+            )
+            page = await context.new_page()
+
+            # Navigate to conversion page
+            await page.goto('https://www.adobe.com/acrobat/online/pdf-to-word.html')
+
+            # Upload file
+            file_input = await page.query_selector('input[type="file"]')
+            await file_input.set_input_files(str(pdf_path))
+
+            # Wait for conversion to complete
+            download_button = await page.wait_for_selector(
+                'a[download], button[download]',
+                timeout=300000  # 5 minutes
+            )
+
+            # Trigger download
+            async with page.expect_download() as download_info:
+                await download_button.click()
+            download = await download_info.value
+
+            # Save file
+            await download.save_as(str(output_path))
+
+            await browser.close()
+```
+
+### Strategy 4: Rate Limiting & Delays
+
+```python
+import asyncio
+import random
+
+class RateLimiter:
+    """Add human-like delays between conversions"""
+
+    def __init__(self, min_delay: float = 5.0, max_delay: float = 15.0):
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+        self.last_request_time = 0
+
+    async def wait(self):
+        """Wait with random human-like delay"""
+        current_time = asyncio.get_event_loop().time()
+        time_since_last = current_time - self.last_request_time
+
+        if time_since_last < self.min_delay:
+            delay = random.uniform(
+                self.min_delay - time_since_last,
+                self.max_delay - time_since_last
+            )
+            await asyncio.sleep(delay)
+
+        self.last_request_time = asyncio.get_event_loop().time()
+```
+
+### Strategy 5: Implement Free Tier Tracking
+
+```python
+class FreeUsageTracker:
+    """Track free conversion quota"""
+
+    def __init__(self, daily_limit: int = 2):
+        self.daily_limit = daily_limit
+        self.usage_file = Path.home() / '.adobe-helper' / 'usage.json'
+        self.usage_data = self._load_usage()
+
+    def _load_usage(self):
+        if self.usage_file.exists():
+            with open(self.usage_file, 'r') as f:
+                return json.load(f)
+        return {'date': str(datetime.date.today()), 'count': 0}
+
+    def can_convert(self) -> bool:
+        """Check if we can still convert without login"""
+        today = str(datetime.date.today())
+
+        # Reset counter if new day
+        if self.usage_data['date'] != today:
+            self.usage_data = {'date': today, 'count': 0}
+
+        return self.usage_data['count'] < self.daily_limit
+
+    def increment_usage(self):
+        """Increment usage counter"""
+        self.usage_data['count'] += 1
+        with open(self.usage_file, 'w') as f:
+            json.dump(self.usage_data, f)
+
+    def get_remaining(self) -> int:
+        """Get remaining free conversions"""
+        return max(0, self.daily_limit - self.usage_data['count'])
+```
+
+### Integration Example
+
+```python
+class AdobePDFConverter:
+    def __init__(self):
+        self.session_manager = AnonymousSessionManager(max_conversions_per_session=2)
+        self.cookie_manager = CookieManager()
+        self.rate_limiter = RateLimiter(min_delay=10.0, max_delay=20.0)
+        self.usage_tracker = FreeUsageTracker(daily_limit=2)
+        self.browser_fallback = BrowserBasedConverter()
+
+    async def convert_pdf_to_word(self, pdf_path: Path, output_path: Path) -> Path:
+        # Check free quota
+        if not self.usage_tracker.can_convert():
+            print(f"Daily limit reached. Remaining: {self.usage_tracker.get_remaining()}")
+            # Fall back to browser automation
+            return await self.browser_fallback.convert_with_browser(pdf_path, output_path)
+
+        # Add human-like delay
+        await self.rate_limiter.wait()
+
+        # Check if we need fresh session
+        if await self.session_manager.should_refresh_session():
+            self.client = await self.session_manager.get_fresh_session()
+
+        try:
+            # Attempt conversion
+            result = await self._do_conversion(pdf_path, output_path)
+            self.usage_tracker.increment_usage()
+            return result
+
+        except AuthenticationRequired:
+            # If login is required, use browser fallback
+            return await self.browser_fallback.convert_with_browser(pdf_path, output_path)
 ```
 
 ---
 
 ## Security Considerations
 
-1. **Do not commit tokens** - Add `.env` to `.gitignore`
+1. **Do not commit session tokens** - Add `.adobe-helper/` to `.gitignore`
 2. **Respect rate limits** - Implement proper throttling
 3. **Use HTTPS only** - Never downgrade to HTTP
-4. **Handle sensitive data** - Don't log full responses with PII
+4. **Handle sensitive data** - Don't log file contents or tokens
 5. **Implement timeouts** - Prevent hanging requests
+6. **Validate file types** - Only accept valid PDF files
+7. **Respect Adobe's Terms of Service** - Use responsibly and within limits
+8. **Session rotation ethics** - Don't abuse the free tier excessively
 
 ---
 
-## Known API Endpoints
+## Known Workflow Endpoints (From Analysis)
 
-Based on network analysis of `https://www.futunn.com/quote/us/stock-list/all-us-stocks/top-turnover`:
+Based on network analysis of `https://www.adobe.com/acrobat/online/pdf-to-word.html`:
 
-### Stock List API
+### Unity Workflow System
 ```
-GET /quote-api/quote-v2/get-stock-list
-Parameters:
-  - marketType: int (2=US, 1=HK, 3=CN)
-  - plateType: int (1=all)
-  - rankType: int (5=turnover, 1=gainers, 2=losers)
-  - page: int (0-indexed)
-  - pageSize: int (default: 50)
+GET /unitylibs/core/workflow/workflow.js
+GET /unitylibs/core/workflow/workflow-acrobat/target-config.json
+GET /unitylibs/core/workflow/workflow-acrobat/action-binder.js
 ```
 
-### Index Quote API
+### Acrobat Web Services
 ```
-GET /quote-api/quote-v2/get-index-quote
-Parameters:
-  - marketType: int
+POST /acrobat-web/machine/unity-dc-frictionless/
+GET /acrobat-web/machine/overall/adobe_com/1.0/unspecified/anon/
 ```
 
-### Index Spark Data API
+### File Operations (To be discovered)
 ```
-GET /quote-api/quote-v2/get-index-spark-data
-Parameters:
-  - marketType: int
+POST /dc-api/upload (hypothetical)
+POST /dc-api/convert (hypothetical)
+GET /dc-api/status/{jobId} (hypothetical)
+GET /dc-api/download/{jobId} (hypothetical)
 ```
+
+**Note:** Actual endpoints need to be discovered through:
+1. Network monitoring during actual file upload
+2. JavaScript analysis of workflow files
+3. API documentation (if available)
+
+---
+
+## Reverse Engineering Steps
+
+To complete the implementation, we need to:
+
+1. **Capture actual API calls:**
+   - Upload a real PDF file on Adobe's website
+   - Monitor network traffic to capture exact endpoints
+   - Record request/response formats
+
+2. **Analyze authentication flow:**
+   - Identify required headers and tokens
+   - Understand session management
+   - Document CSRF protection mechanism
+
+3. **Document upload protocol:**
+   - Multipart form data format
+   - Required metadata fields
+   - File size limits and chunking
+
+4. **Map conversion workflow:**
+   - Job submission parameters
+   - Status polling mechanism
+   - Download link generation
 
 ---
 
 ## Future Enhancements
 
-1. **WebSocket Support** - Real-time streaming data
-2. **Caching Layer** - Redis/SQLite for historical data
-3. **CLI Tool** - Command-line interface for quick queries
-4. **Data Export** - CSV/JSON/Parquet export functionality
-5. **Visualization** - Integration with matplotlib/plotly
-6. **Alerts** - Price/volume threshold notifications
+1. **Multi-format Support** - PDF to Excel, PowerPoint, images
+2. **OCR Integration** - For scanned PDFs
+3. **Batch Processing** - Process multiple files efficiently
+4. **Progress Tracking** - Real-time conversion progress
+5. **CLI Tool** - Command-line interface
+6. **GUI** - Simple desktop app using tkinter/PyQt
+7. **Cloud Storage** - Direct upload from Google Drive, Dropbox
 
 ---
 
@@ -642,115 +943,62 @@ Parameters:
 
 When working on this project:
 
-1. Follow the py-googletrans architecture pattern
+1. Study Adobe's workflow system architecture
 2. Maintain async/await consistency
-3. Add type hints to all new functions
+3. Add type hints to all functions
 4. Write tests for new features
-5. Update AGENTS.md when adding new APIs
+5. Update AGENTS.md when discovering new endpoints
 6. Document all public methods with docstrings
 7. Keep dependencies minimal
 
 ---
 
-## Trusted Publishing to PyPI
+## Project Configuration (pyproject.toml)
 
-This project uses **OpenID Connect (OIDC) Trusted Publishing** for secure, automated releases.
+```toml
+[project]
+name = "adobe-helper"
+version = "0.1.0"
+description = "Python client for Adobe PDF to Word conversion"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
 
-### What is Trusted Publishing?
+dependencies = [
+    "httpx[http2]>=0.27.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+]
 
-- Eliminates need for manually managing PyPI API tokens
-- Uses short-lived OIDC tokens from GitHub Actions
-- More secure than long-lived API tokens
-- Automatically configured between GitHub and PyPI
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.7.1",
+    "black>=24.0.0",
+    "mypy>=1.8.0",
+]
 
-### Setup (One-Time)
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-**1. Configure PyPI:**
-- Visit: https://pypi.org/manage/project/futunn-helper/settings/publishing/
-- Add trusted publisher:
-  - **Owner**: `karlorz`
-  - **Repository**: `futunn-helper`
-  - **Workflow**: `release.yml`
-  - **Environment**: `pypi`
+[tool.ruff]
+line-length = 100
+target-version = "py311"
 
-**2. Create GitHub Environment:**
-- Go to: Repository → Settings → Environments
-- Create environment named `pypi`
-- (Optional) Add protection rules
+[tool.black]
+line-length = 100
+target-version = ['py311']
 
-### Publishing a Release
-
-```bash
-# 1. Update version in pyproject.toml
-# version = "0.2.0"
-
-# 2. Commit and tag
-git add pyproject.toml
-git commit -m "Release v0.2.0"
-git tag v0.2.0
-
-# 3. Push tag
-git push origin main --tags
-
-# 4. GitHub Actions automatically:
-#    - Builds package
-#    - Runs smoke tests
-#    - Publishes to PyPI via OIDC
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
 ```
-
-### Workflow Configuration
-
-The `.github/workflows/release.yml` workflow handles releases:
-
-```yaml
-name: Release to PyPI
-
-on:
-  push:
-    tags:
-      - v*  # Trigger on version tags
-
-jobs:
-  pypi:
-    name: Build and Publish to PyPI
-    runs-on: ubuntu-latest
-
-    environment:
-      name: pypi  # Must match PyPI config
-
-    permissions:
-      id-token: write  # REQUIRED for OIDC
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv python install 3.11
-      - run: uv build
-      - run: uv publish  # Uses OIDC automatically
-```
-
-### Continuous Integration
-
-The `.github/workflows/ci.yml` runs on every push:
-
-- Tests on Python 3.7-3.12
-- Linting with ruff
-- Formatting checks with black
-- Type checking with mypy
-- Build verification
-
----
-
-## References
-
-- **py-googletrans GitHub**: https://github.com/ssut/py-googletrans
-- **httpx Documentation**: https://www.python-httpx.org/
-- **asyncio Documentation**: https://docs.python.org/3/library/asyncio.html
-- **Futunn Website**: https://www.futunn.com/
-- **UV Documentation**: https://docs.astral.sh/uv/
-- **Trusted Publishing**: https://docs.pypi.org/trusted-publishers/
-- **Astral Trusted Publishing Examples**: https://github.com/astral-sh/trusted-publishing-examples
 
 ---
 
@@ -758,43 +1006,40 @@ The `.github/workflows/ci.yml` runs on every push:
 
 To start implementing:
 
-1. **Setup Environment**:
+1. **Setup Environment:**
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    uv python install 3.11
    uv sync --all-extras --dev
    ```
 
-2. **Review This Guide**:
-   - Key Features & Quick Start sections for workflow expectations
-   - Technical Implementation Guidelines for architectural patterns
-   - Support Resources to know when to use Context7 MCP or DeepWiki
+2. **Next Steps:**
+   - Perform live network capture during PDF upload
+   - Extract actual API endpoints
+   - Implement authentication flow
+   - Build upload/conversion/download pipeline
 
-3. **Implementation Order**:
-   - Start with `futunn/models.py` (data structures)
-   - Then `futunn/token.py` (token management)
-   - Then `futunn/client.py` (main client)
-   - Finally `examples/basic_usage.py` (usage examples)
-
-4. **Development Workflow**:
+3. **Development Workflow:**
    ```bash
    # Make changes
-   uv run ruff check futunn/      # Lint
-   uv run black futunn/           # Format
+   uv run ruff check adobe/      # Lint
+   uv run black adobe/           # Format
    uv run pytest                  # Test
    uv run python examples/basic_usage.py  # Try it
    ```
 
-5. **Publishing**:
-   ```bash
-   # Update version in pyproject.toml
-   git tag v0.1.0
-   git push --tags
-   # GitHub Actions handles the rest!
-   ```
-
 **Remember:**
-- Follow the async patterns from py-googletrans exactly
-- Use UV for all dependency management
-- Let trusted publishing handle PyPI releases
-- This architecture has proven to be robust, scalable, and maintainable
+- This is reverse engineering of Adobe's web service
+- API endpoints need to be discovered through network analysis
+- Always respect Adobe's Terms of Service
+- Use for legitimate PDF conversion purposes only
+
+---
+
+## External Research Notes
+
+- **py-googletrans (ssut/py-googletrans)**
+  - Unofficial Google Translate wrapper; main `Translator` class issues translate/detect requests, while `TokenAcquirer` reproduces Google web token logic refreshed hourly.
+  - Relies on `httpx.AsyncClient` (HTTP/2 optional) with configurable service URLs (e.g., `translate.googleapis.com` to bypass token), custom user-agents/proxies, and concurrency controls for batch ops.
+  - Key modules: `googletrans.client` (public API), `googletrans.gtoken` (tk generation), `googletrans.constants` (language mappings/defaults), `googletrans.models` (response dataclasses), `googletrans.utils` (param building/JSON parsing).
+  - Caveats: unofficial scraping approach; subject to breakage, ~15K char per request cap, heavy usage can trigger IP bans; official Google Translate API recommended for production stability.

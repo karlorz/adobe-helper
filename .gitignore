@@ -137,3 +137,11 @@ Thumbs.db
 .ruff_cache/
 
 CLAUDE.local.md
+
+# Adobe Helper specific
+.adobe-helper/
+*.pdf
+*.docx
+*.xlsx
+*.pptx
+!tests/fixtures/*.pdf

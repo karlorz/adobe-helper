@@ -1,0 +1,63 @@
+{
+  "discovery_date": "2025-10-17T20:32:47.334660",
+  "status": "captured",
+  "endpoints": {
+    "upload": {
+      "url": "https://pdfnow-jpn3.adobe.io/1761291926/assets",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <token>",
+        "X-Request-ID": "cr-<uuid>",
+        "X-Api-Client-Id": "api_browser",
+        "X-Api-App-Info": "dc-web-app",
+        "X-User-Action-Name": "pdf-to-word"
+      },
+      "payload_type": "multipart/form-data",
+      "payload_example": "--boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"document.pdf\"\r\nContent-Type: application/pdf\r\n\r\n(binary data)\r\n--boundary--",
+      "response_fields": ["asset_uri", "uri", "monitor_link", "rename_info"],
+      "notes": "Uploads raw file bytes. Returns asset metadata including asset_uri; monitor_link present for large uploads"
+    },
+    "conversion": {
+      "url": "https://pdfnow-jpn3.adobe.io/1761291926/assets/exportpdf",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <token>",
+        "X-Request-ID": "cr-<uuid>",
+        "Content-Type": "application/json"
+      },
+      "payload_type": "application/json",
+      "payload_example": "{\"asset_uri\":\"https://pdfnow.adobe.io/<tenant>/assets/urn:aaid:sc:AP:...\",\"name\":\"document.docx\",\"format\":\"docx\",\"context\":\"PDFNowLifeCycle\",\"persistence\":\"transient\",\"do_ocr\":true,\"ocr_lang\":\"en-US\"}",
+      "response_fields": ["status", "retry_interval", "job_uri"],
+      "notes": "Submits export job referencing uploaded asset_uri and returns job_uri for polling"
+    },
+    "status": {
+      "url": "https://pdfnow-jpn3.adobe.io/1761291926/jobs/status",
+      "method": "GET",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      },
+      "polling_interval": "~2 seconds",
+      "response_fields": ["status", "asset_result", "retry_interval"],
+      "notes": "Poll with job_uri as query parameter"
+    },
+    "download": {
+      "url": "https://pdfnow-jpn3.adobe.io/1761291926/assets/download_uri",
+      "method": "GET",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      },
+      "response_fields": ["storage_type", "download_uri", "headers"],
+      "notes": "Provide asset_uri to receive signed S3 download link plus required headers"
+    }
+  },
+  "instructions": [
+    "1. Open: https://www.adobe.com/acrobat/online/pdf-to-word.html",
+    "2. Press F12 (Chrome DevTools)",
+    "3. Go to Network tab",
+    "4. Check 'Preserve log'",
+    "5. Filter: Only 'Fetch/XHR'",
+    "6. Upload a small PDF",
+    "7. Document the 3 endpoints below",
+    "8. Run: python api_discovery_helper.py update"
+  ]
+}
