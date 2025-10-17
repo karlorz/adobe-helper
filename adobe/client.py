@@ -58,8 +58,9 @@ class AdobePDFConverter:
         self,
         session_dir: Path | None = None,
         use_session_rotation: bool = True,
-        track_usage: bool = True,
+        track_usage: bool = False,  # Changed: Disable local tracking by default
         enable_rate_limiting: bool = True,
+        bypass_local_limits: bool = True,  # New: Allow bypassing local limits
     ):
         """
         Initialize the Adobe PDF Converter
@@ -67,13 +68,15 @@ class AdobePDFConverter:
         Args:
             session_dir: Directory for session data storage
             use_session_rotation: Enable anonymous session rotation
-            track_usage: Enable usage tracking for free tier
+            track_usage: Enable local usage tracking (NOT recommended - Adobe tracks server-side)
             enable_rate_limiting: Enable rate limiting
+            bypass_local_limits: Bypass local usage limits (mimics clearing browser data)
         """
         self.session_dir = session_dir
         self.use_session_rotation = use_session_rotation
         self.track_usage = track_usage
         self.enable_rate_limiting = enable_rate_limiting
+        self.bypass_local_limits = bypass_local_limits
 
         # Will be initialized in __aenter__ or initialize()
         self.client: httpx.AsyncClient | None = None
@@ -163,8 +166,13 @@ class AdobePDFConverter:
         if not self._initialized:
             await self.initialize()
 
-        # Check usage quota
-        if self.track_usage and self.usage_tracker and not self.usage_tracker.can_convert():
+        # Check usage quota (only if not bypassing local limits)
+        if (
+            self.track_usage
+            and self.usage_tracker
+            and not self.bypass_local_limits
+            and not self.usage_tracker.can_convert()
+        ):
             raise QuotaExceededError(
                 "Daily conversion quota exceeded",
                 limit=self.usage_tracker.daily_limit,
@@ -200,7 +208,7 @@ class AdobePDFConverter:
                 logger.error("API endpoints not configured: %s", ", ".join(unresolved))
                 raise AdobeHelperError(
                     "Adobe API endpoints are not configured yet. "
-                    "Run `python api_discovery_helper.py checklist` and update discovered_endpoints.json.",
+                    "Capture the real endpoints (see docs/discovery/API_DISCOVERY.md) and update discovered_endpoints.json.",
                     details={"missing": ",".join(unresolved)},
                 )
 
@@ -423,3 +431,73 @@ class AdobePDFConverter:
         if isinstance(self.session_manager, AnonymousSessionManager):
             return self.session_manager.get_session_stats()
         return None
+
+    async def reset_session_data(self) -> None:
+        """
+        Reset all session data (mimics clearing browser data)
+        
+        This clears:
+        - Usage tracking data
+        - Session cookies
+        - Access tokens
+        - Conversion counters
+        
+        Use this when you hit limits and want to start fresh,
+        similar to clearing browser data in Chrome.
+        """
+        logger.info("Resetting session data...")
+        
+        # Reset usage tracker
+        if self.usage_tracker:
+            self.usage_tracker.reset_usage()
+            logger.info("✓ Usage tracking reset")
+        
+        # Clear cookies
+        if isinstance(self.session_manager, AnonymousSessionManager):
+            # Clear all saved cookies
+            if self.session_manager.cookie_manager:
+                count = self.session_manager.cookie_manager.clear_all_cookies()
+                logger.info(f"✓ Cleared {count} cookie file(s)")
+            
+            # Force new session
+            await self.session_manager.create_fresh_session()
+            logger.info("✓ Created fresh session")
+        
+        elif isinstance(self.session_manager, SessionManager):
+            # Clear session info
+            await self.session_manager.clear_session()
+            # Re-initialize
+            await self.session_manager.initialize()
+            logger.info("✓ Session re-initialized")
+        
+        logger.info("Session reset complete - ready for new conversions")
+
+    @classmethod
+    async def create_with_fresh_session(
+        cls,
+        session_dir: Path | None = None,
+        bypass_local_limits: bool = True,
+    ) -> "AdobePDFConverter":
+        """
+        Create a new converter instance with completely fresh session data
+        
+        This is equivalent to:
+        1. Clearing browser data in Chrome
+        2. Creating a new converter instance
+        
+        Args:
+            session_dir: Directory for session data storage
+            bypass_local_limits: Whether to bypass local usage limits
+            
+        Returns:
+            New AdobePDFConverter instance with fresh session
+        """
+        instance = cls(
+            session_dir=session_dir,
+            use_session_rotation=True,
+            track_usage=False,  # Don't track locally
+            bypass_local_limits=bypass_local_limits,
+        )
+        await instance.initialize()
+        await instance.reset_session_data()
+        return instance

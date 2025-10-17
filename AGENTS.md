@@ -67,6 +67,8 @@ Key endpoints from network analysis:
 ```
 
 **Important:** Browser sessions surface an `asset_uri` in the URL fragment (`#assets=...`), but the backend still expects the asset bytes to be uploaded via the `/assets` endpoint before calling `exportpdf`. Our client must reproduce that upload step to obtain a valid `asset_uri`.
+
+**Endpoint caching:** On initialization the library copies any discovered endpoint file into `~/.adobe-helper/discovered_endpoints.json`. If nothing exists it writes a fresh template with the same Chrome DevTools checklist. Keep the canonical capture under `docs/discovery/discovered_endpoints.json` (or `archive/discovery/` for historical snapshots) current so new installs inherit working URLs.
 ```
 
 ---

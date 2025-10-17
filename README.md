@@ -19,11 +19,13 @@ See [API_DISCOVERY.md](API_DISCOVERY.md) for instructions on discovering Adobe's
 - Simple async API with context manager support
 - Automatic session management and rotation
 - Built-in retry logic with exponential backoff
+- **Bypass local usage limits** (mimics clearing browser data)
 
 📊 **Smart Management**
-- Free tier quota tracking with daily limits
+- Optional usage tracking with daily limits
 - Intelligent rate limiting with human-like delays
-- Session rotation to maximize free conversions
+- Automatic session rotation for unlimited conversions
+- Fresh session creation (like incognito mode)
 
 🔒 **Reliable**
 - Streaming upload/download for large files
@@ -70,8 +72,10 @@ from pathlib import Path
 from adobe import AdobePDFConverter
 
 async def main():
-    # Convert a PDF to Word
-    async with AdobePDFConverter() as converter:
+    # Convert a PDF to Word (bypasses local limits by default)
+    async with AdobePDFConverter(
+        bypass_local_limits=True  # Mimics clearing browser data
+    ) as converter:
         output_file = await converter.convert_pdf_to_word(
             Path("document.pdf")
         )
@@ -169,23 +173,37 @@ PDF File → Upload → Conversion Job → Poll Status → Download DOCX
 
 See the [`examples/adobe/`](examples/adobe/) directory for complete examples:
 
-- **basic_usage.py** - Simple conversion example
+- **basic_usage.py** - Simple conversion with bypass enabled
 - **batch_convert.py** - Sequential and concurrent batch processing
 - **advanced_usage.py** - Advanced configuration and error handling
+
+Legacy bypass/reset scripts now live under `archive/docs/` for reference.
+
+### Bypassing Usage Limits
+
+By default, the library now bypasses local usage tracking and relies on Adobe's server-side limits with automatic session rotation:
+
+```python
+# Automatic session rotation (recommended for batch processing)
+async with AdobePDFConverter(
+    bypass_local_limits=True,  # Default: True
+    use_session_rotation=True,  # Auto-rotate sessions
+) as converter:
+    for pdf in pdf_files:
+        await converter.convert_pdf_to_word(pdf)
+```
+
+For more details, see [BYPASS_LIMITS.md](BYPASS_LIMITS.md).
+
+**Quick reset**: Call `AdobePDFConverter.reset_session_data()` (or use `AdobePDFConverter.create_with_fresh_session()`) to clear all local state; the legacy helper script now resides in `archive/docs/`.
 
 ## API Discovery Required
 
 ⚠️ **Important**: Before this library can perform actual conversions, you need to discover Adobe's API endpoints using Chrome DevTools.
 
-See [API_DISCOVERY.md](API_DISCOVERY.md) for detailed instructions.
+See [docs/discovery/API_DISCOVERY.md](docs/discovery/API_DISCOVERY.md) for detailed instructions.
 
-The following placeholder URLs need to be replaced in `adobe/client.py`:
-
-```python
-upload_url = "https://www.adobe.com/dc-api/upload"      # Placeholder
-conversion_url = "https://www.adobe.com/dc-api/convert"  # Placeholder
-status_url = "https://www.adobe.com/dc-api/status"      # Placeholder
-```
+Discovered endpoint files are cached automatically: any `discovered_endpoints.json` found in `docs/discovery/` or `archive/discovery/` is copied into `~/.adobe-helper/` on first run, and a template is generated if missing.
 
 ## Development
 
@@ -248,7 +266,7 @@ uv run mypy adobe/
 
 ### 🔄 Remaining
 
-- [ ] **API endpoint discovery** (critical - see API_DISCOVERY.md)
+- [ ] **API endpoint discovery** (critical - see `docs/discovery/API_DISCOVERY.md`)
 - [ ] Integration tests with real API
 - [ ] CLI tool (optional)
 - [ ] Browser automation fallback (optional)

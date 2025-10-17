@@ -16,8 +16,12 @@ async def main():
     # Path to your PDF file
     pdf_file = Path("document.pdf")  # Replace with your PDF file path
 
-    # Create converter instance
-    converter = AdobePDFConverter()
+    # Create converter instance with bypass enabled
+    # This bypasses local usage tracking (Adobe tracks server-side)
+    converter = AdobePDFConverter(
+        bypass_local_limits=True,  # Mimic clearing browser data
+        track_usage=False,  # Don't track locally
+    )
 
     try:
         # Initialize the converter
@@ -31,11 +35,10 @@ async def main():
 
         print(f"✓ Conversion complete: {output_file}")
 
-        # Show usage statistics
-        usage = converter.get_usage_summary()
-        if usage:
-            print(f"\nUsage: {usage['count']}/{usage['limit']} conversions today")
-            print(f"Remaining: {usage['remaining']}")
+        # Show session statistics
+        stats = converter.get_session_stats()
+        if stats:
+            print(f"\nSession: {stats['conversions']}/{stats['limit']} conversions")
 
     except Exception as e:
         print(f"✗ Conversion failed: {e}")
@@ -51,7 +54,11 @@ async def main_with_context_manager():
 
     pdf_file = Path("document.pdf")
 
-    async with AdobePDFConverter() as converter:
+    # Bypass local limits - Adobe tracks usage server-side
+    async with AdobePDFConverter(
+        bypass_local_limits=True,
+        track_usage=False,
+    ) as converter:
         print(f"Converting {pdf_file.name} to Word...")
 
         output_file = await converter.convert_pdf_to_word(

@@ -9,6 +9,7 @@ network analysis during actual PDF upload on Adobe's website.
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 
 from adobe.constants import DEFAULT_SESSION_DIR
@@ -125,6 +126,17 @@ _ENDPOINT_ENV_VARS = {
 
 _CONFIG_ENV_VAR = "ADOBE_HELPER_ENDPOINTS_FILE"
 _DISCOVERY_FILENAME = "discovered_endpoints.json"
+_DISCOVERY_KEYS = ("upload", "conversion", "status", "download")
+_DISCOVERY_INSTRUCTIONS = (
+    "1. Open: https://www.adobe.com/acrobat/online/pdf-to-word.html",
+    "2. Press F12 (Chrome DevTools)",
+    "3. Go to Network tab",
+    "4. Check 'Preserve log'",
+    "5. Filter: Only 'Fetch/XHR'",
+    "6. Upload a small PDF",
+    "7. Document the 3 endpoints below",
+    "8. Run: python api_discovery_helper.py update",
+)
 
 
 def _extract_endpoint_url(entry) -> str | None:
@@ -190,6 +202,8 @@ def _candidate_endpoint_files(explicit_path: str | Path | None = None) -> list[P
     candidates.append(Path.cwd() / _DISCOVERY_FILENAME)
     package_root = Path(__file__).resolve().parent.parent
     candidates.append(package_root / _DISCOVERY_FILENAME)
+    candidates.append(package_root / "docs" / "discovery" / _DISCOVERY_FILENAME)
+    candidates.append(package_root / "archive" / "discovery" / _DISCOVERY_FILENAME)
     home_config = Path.home() / DEFAULT_SESSION_DIR / _DISCOVERY_FILENAME
     candidates.append(home_config)
 
@@ -207,13 +221,15 @@ def _candidate_endpoint_files(explicit_path: str | Path | None = None) -> list[P
     return unique_candidates
 
 
-def _load_configured_endpoints(config_path: str | Path | None = None) -> dict[str, str]:
+def _load_configured_endpoints(
+    config_path: str | Path | None = None,
+) -> tuple[dict[str, str], Path | None]:
     for candidate in _candidate_endpoint_files(config_path):
         if candidate.is_file():
             loaded = _load_endpoints_from_file(candidate)
             if loaded:
-                return loaded
-    return {}
+                return loaded, candidate
+    return {}, None
 
 
 def _load_env_overrides() -> dict[str, str]:
@@ -230,6 +246,54 @@ def _load_env_overrides() -> dict[str, str]:
     return overrides
 
 
+def _is_placeholder(value: str) -> bool:
+    return value in {API_UPLOAD, API_CONVERT, API_STATUS, API_DOWNLOAD}
+
+
+def _write_discovery_file(path: Path, endpoints: dict[str, str], status: str) -> None:
+    payload = {
+        "discovery_date": datetime.now().isoformat(),
+        "status": status,
+        "endpoints": {
+            key: {"url": endpoints.get(key, "")}
+            for key in _DISCOVERY_KEYS
+        },
+        "instructions": list(_DISCOVERY_INSTRUCTIONS),
+    }
+
+    try:
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        logger.info("Generated API discovery data at %s", path)
+    except OSError as exc:
+        logger.warning("Failed to write discovery file %s: %s", path, exc)
+
+
+def _ensure_home_discovery_file(endpoints: dict[str, str], source: Path | None = None) -> None:
+    session_dir = Path.home() / DEFAULT_SESSION_DIR
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("Failed to create session directory %s: %s", session_dir, exc)
+        return
+
+    target = session_dir / _DISCOVERY_FILENAME
+
+    if target.exists():
+        return
+
+    if source and source.is_file():
+        try:
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            logger.info("Cached API discovery file to %s", target)
+            return
+        except OSError as exc:
+            logger.warning("Failed to cache discovery file to %s: %s", target, exc)
+
+    has_values = any(endpoints.get(key) for key in _DISCOVERY_KEYS)
+    status_value = "cached" if has_values else "template"
+    _write_discovery_file(target, endpoints if has_values else {}, status_value)
+
+
 def get_api_endpoints(config_path: str | Path | None = None) -> dict[str, str]:
     """Return API endpoint URLs with optional overrides."""
 
@@ -240,7 +304,21 @@ def get_api_endpoints(config_path: str | Path | None = None) -> dict[str, str]:
         "download": API_DOWNLOAD,
     }
 
-    endpoints.update(_load_configured_endpoints(config_path))
-    endpoints.update(_load_env_overrides())
+    configured, source = _load_configured_endpoints(config_path)
+    if configured:
+        endpoints.update(configured)
+
+    overrides = _load_env_overrides()
+    if overrides:
+        endpoints.update(overrides)
+        source = None
+
+    cached_values: dict[str, str] = {}
+    for key in _DISCOVERY_KEYS:
+        value = endpoints.get(key, "")
+        if value and not _is_placeholder(value):
+            cached_values[key] = value
+
+    _ensure_home_discovery_file(cached_values, source if cached_values else None)
 
     return endpoints
