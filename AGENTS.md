@@ -871,6 +871,27 @@ class AdobePDFConverter:
 
 ---
 
+## PyPI Publishing (Trusted Workflow)
+
+Follow this compact checklist when preparing a release to PyPI:
+
+1. **One-time setup (skip if already done):**
+   - On PyPI, add a *Trusted Publisher* pointing to `karlorz/adobe-helper`, workflow `release.yml`, environment `pypi`.
+   - In GitHub → Settings → Environments, create an environment named `pypi` (match casing) and grant it the default permissions.
+2. **Prepare the build:**
+   - Update `pyproject.toml` with the new version number.
+   - Run local checks (`ruff`, `black`, `pytest`) to confirm the release is green.
+3. **Cut the release:**
+   - Commit the version bump and tag it (`git tag vX.Y.Z`).
+   - Push the tag to GitHub *or* trigger `.github/workflows/release.yml` via **Run workflow** (the maintainer prefers manual dispatch).
+4. **Automation handles publishing:**
+   - The release workflow builds wheels/sdists with `uv build`, runs twine checks + smoke tests, and calls `uv publish` using OIDC—no PyPI token needed.
+   - Monitor the workflow logs; once it succeeds, verify the package on https://pypi.org/project/adobe-helper/ (staging URL shown in the workflow file may still reference legacy futunn-helper—update if needed).
+
+If the workflow cannot access PyPI (e.g., environment missing), fix the configuration, rerun the job, and keep AGENTS.md in sync with any process changes.
+
+---
+
 ## Known Workflow Endpoints (From Analysis)
 
 Based on network analysis of `https://www.adobe.com/acrobat/online/pdf-to-word.html`:

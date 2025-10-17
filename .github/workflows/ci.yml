@@ -32,20 +32,16 @@ jobs:
           uv sync --all-extras --dev
 
       - name: Run linting (ruff)
-        run: uv run ruff check futunn/ examples/
-        continue-on-error: true
+        run: uv run ruff check adobe/ tests/ examples/
 
       - name: Run formatting check (black)
-        run: uv run black --check futunn/ examples/
-        continue-on-error: true
+        run: uv run black --check adobe/ tests/ examples/
 
       - name: Run type checking (mypy)
-        run: uv run mypy futunn/
-        continue-on-error: true
+        run: uv run mypy adobe/
 
       - name: Run tests
-        run: uv run pytest tests/ -v --cov=futunn --cov-report=xml
-        continue-on-error: true
+        run: uv run pytest --cov=adobe --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

@@ -11,7 +11,7 @@
 
 **This project is ~98% complete.** The architecture, all modules, and examples are fully implemented and tested. However, **API endpoint discovery is required** before the library can perform actual conversions.
 
-See [API_DISCOVERY.md](API_DISCOVERY.md) for instructions on discovering Adobe's actual API endpoints using Chrome DevTools.
+See [docs/discovery/API_DISCOVERY.md](docs/discovery/API_DISCOVERY.md) for instructions on discovering Adobe's actual API endpoints using Chrome DevTools.
 
 ## Features
 
@@ -136,6 +136,28 @@ async def advanced_convert():
     finally:
         await converter.close()
 ```
+
+## Endpoint Discovery CLI
+
+Use the bundled helper to capture endpoints and keep discovery files synced:
+
+```bash
+# Show available commands
+python -m adobe.cli.api_discovery_helper --help
+
+# Create or refresh the project discovery template
+python -m adobe.cli.api_discovery_helper template
+
+# Validate captured URLs and sync project ↔ user cache copies
+python -m adobe.cli.api_discovery_helper update
+
+# Installed entry point (after `pip install .`)
+adobe-api-discovery checklist
+```
+
+See [docs/discovery/API_DISCOVERY.md](docs/discovery/API_DISCOVERY.md) for the full walkthrough.
+
+The helper stores discovered endpoints in `~/.adobe-helper` by default, but will fall back to `./.adobe-helper` (or the system temp directory) automatically when the home directory is not writable—useful for containerized or sandboxed environments.
 
 ## Architecture
 

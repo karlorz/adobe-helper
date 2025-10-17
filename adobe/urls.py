@@ -135,7 +135,7 @@ _DISCOVERY_INSTRUCTIONS = (
     "5. Filter: Only 'Fetch/XHR'",
     "6. Upload a small PDF",
     "7. Document the 3 endpoints below",
-    "8. Run: python api_discovery_helper.py update",
+    "8. Run: python -m adobe.cli.api_discovery_helper update",
 )
 
 

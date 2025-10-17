@@ -49,7 +49,7 @@ def create_discovery_template():
             "5. Filter: Only 'Fetch/XHR'",
             "6. Upload a small PDF",
             "7. Document the 3 endpoints below",
-            "8. Run: python api_discovery_helper.py update"
+            "8. Run: python -m adobe.cli.api_discovery_helper update"
         ]
     }
     
@@ -160,7 +160,7 @@ def validate_discovery():
     discovery_file = Path("discovered_endpoints.json")
     
     if not discovery_file.exists():
-        print("❌ No discovery file found. Run: python api_discovery_helper.py")
+        print("❌ No discovery file found. Run: python -m adobe.cli.api_discovery_helper")
         return False
     
     with open(discovery_file) as f:
@@ -209,7 +209,6 @@ if __name__ == "__main__":
         create_discovery_template()
         print("\n" + "="*70)
         print("\n📋 Want to see the full checklist?")
-        print("   Run: python api_discovery_helper.py checklist")
+        print("   Run: python -m adobe.cli.api_discovery_helper checklist")
         print("\n🔍 Ready to validate your discoveries?")
-        print("   Run: python api_discovery_helper.py validate")
-
+        print("   Run: python -m adobe.cli.api_discovery_helper validate")

@@ -4,16 +4,9 @@ This guide explains how to discover Adobe's actual API endpoints using Chrome De
 
 ## Why This Is Needed
 
-Adobe Helper is 98% complete, but the actual API endpoints are currently placeholders:
+Adobe Helper ships with placeholder endpoints. The runtime automatically looks for a discovery JSON file (see `docs/discovery/discovered_endpoints.json` or `~/.adobe-helper/discovered_endpoints.json`) and falls back to the placeholders only when no data is available. To make conversions work you must capture the **real endpoints** and populate the discovery file, which the client then loads via `adobe.urls.get_api_endpoints()`.
 
-```python
-# These are placeholders in adobe/client.py (lines 177-179)
-upload_url = "https://www.adobe.com/dc-api/upload"      # ❌ Placeholder
-conversion_url = "https://www.adobe.com/dc-api/convert"  # ❌ Placeholder
-status_url = "https://www.adobe.com/dc-api/status"      # ❌ Placeholder
-```
-
-We need to discover the **real endpoints** by monitoring network traffic while using Adobe's PDF-to-Word service.
+This guide walks through capturing those URLs so you can update the discovery JSON and let the library auto-configure itself.
 
 ## Prerequisites
 
@@ -265,36 +258,45 @@ Content-Type: application/json
 **Response:** Binary DOCX file
 ```
 
-## Step 9: Update Adobe Helper Code
+## Step 9: Update the Discovery JSON
 
-Once you have documented all endpoints, update `adobe/client.py`:
+Place the captured URLs into the discovery file so the helper library can load them automatically. There are two supported locations:
 
-```python
-# Replace lines 177-179 in adobe/client.py
+- Project-level default: `docs/discovery/discovered_endpoints.json`
+- User cache: `~/.adobe-helper/discovered_endpoints.json`
 
-# OLD (placeholders):
-upload_url = "https://www.adobe.com/dc-api/upload"
-conversion_url = "https://www.adobe.com/dc-api/convert"
-status_url = "https://www.adobe.com/dc-api/status"
+Each entry should live under the `"endpoints"` mapping using the structure below (actual values omitted here):
 
-# NEW (discovered endpoints):
-upload_url = "https://[ACTUAL ENDPOINT]"
-conversion_url = "https://[ACTUAL ENDPOINT]"
-status_url = "https://[ACTUAL ENDPOINT]"
+```json
+{
+  "endpoints": {
+    "upload": { "url": "https://pdfnow-<region>.adobe.io/<tenant>/assets" },
+    "conversion": { "url": "https://pdfnow-<region>.adobe.io/<tenant>/assets/exportpdf" },
+    "status": { "url": "https://pdfnow-<region>.adobe.io/<tenant>/jobs/status" },
+    "download": { "url": "https://pdfnow-<region>.adobe.io/<tenant>/assets/download_uri" }
+  }
+}
 ```
 
-Also update `adobe/urls.py` with the actual endpoints:
+When you run the client (or the helper script `python -m adobe.cli.api_discovery_helper update`), the project-level file is copied into the user cache if one is not already present. The client reads the user cache first, then project defaults, and finally falls back to environment variables before resorting to placeholders.
 
-```python
-# Add discovered endpoints to adobe/urls.py
-API_UPLOAD = "https://[DISCOVERED UPLOAD URL]"
-API_CONVERT = "https://[DISCOVERED CONVERSION URL]"
-API_STATUS = "https://[DISCOVERED STATUS URL]"
-```
+**CLI shortcuts:**
+- `python -m adobe.cli.api_discovery_helper template` – create a fresh template if the file is missing
+- `python -m adobe.cli.api_discovery_helper update` – validate URLs and sync project ↔ user cache
+- `python -m adobe.cli.api_discovery_helper validate` – same as update but exits with non-zero status if any URL is missing
+- Installed entry point: `adobe-api-discovery <command>`
+- The helper writes to `~/.adobe-helper` when possible, but automatically falls back to `<project>/.adobe-helper` or the system temp directory when the home directory is read-only (e.g., sandboxed CI).
 
 ## Step 10: Test the Integration
 
-After updating the endpoints:
+After updating the discovery JSON:
+
+```bash
+# Quick sanity check for discovery plumbing
+pytest tests/test_urls.py
+```
+
+Then try a live conversion (requires valid endpoints and network access):
 
 ```bash
 # Run a test conversion
@@ -373,11 +375,10 @@ If you're stuck:
 
 Once you've discovered and documented all endpoints:
 
-1. ✅ Update `adobe/client.py` with real URLs
-2. ✅ Update `adobe/urls.py` with endpoints
-3. ✅ Create `API_ENDPOINTS.md` with full documentation
-4. ✅ Test with a real PDF file
-5. ✅ Add integration tests
-6. ✅ Update this guide with actual endpoint patterns (optional)
+1. ✅ Add the real URLs to `docs/discovery/discovered_endpoints.json` (and confirm they flow to `~/.adobe-helper/discovered_endpoints.json`)
+2. ✅ Document the endpoints in `API_ENDPOINTS.md`
+3. ✅ Test with a real PDF file
+4. ✅ Add integration tests
+5. ✅ Update this guide with actual endpoint patterns (optional)
 
 Good luck! Once you complete this step, Adobe Helper will be 100% functional! 🎉
