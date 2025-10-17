@@ -1,6 +1,6 @@
 [project]
 name = "adobe-helper"
-version = "1.0.3"
+version = "1.0.4"
 description = "Python client for Adobe PDF to Word conversion using Adobe's online services"
 readme = "README.md"
 requires-python = ">=3.11"
