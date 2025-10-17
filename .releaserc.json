@@ -1,6 +1,6 @@
 {
   "branches": ["main"],
-  "repositoryUrl": "https://github.com/karlorz/futunn-helper",
+  "repositoryUrl": "https://github.com/karlorz/adobe-helper",
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",

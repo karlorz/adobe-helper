@@ -16,7 +16,7 @@ jobs:
     environment:
       # Create this environment in GitHub repository under Settings -> Environments
       name: pypi
-      url: https://pypi.org/project/futunn-helper/
+      url: https://pypi.org/project/adobe-helper/
 
     permissions:
       # REQUIRED: This permission is mandatory for trusted publishing
@@ -46,13 +46,13 @@ jobs:
       - name: Smoke test (wheel)
         run: |
           uv run --isolated --no-project --with dist/*.whl \
-            python -c "import futunn; print(f'futunn-helper v{futunn.__version__}')"
+            python -c "import adobe; print(f'adobe-helper v{adobe.__version__}')"
 
       # Smoke test: Install and import the package from source distribution
       - name: Smoke test (source distribution)
         run: |
           uv run --isolated --no-project --with dist/*.tar.gz \
-            python -c "import futunn; print(f'futunn-helper v{futunn.__version__}')"
+            python -c "import adobe; print(f'adobe-helper v{adobe.__version__}')"
 
       - name: Publish to PyPI
         run: uv publish

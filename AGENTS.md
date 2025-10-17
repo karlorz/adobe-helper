@@ -886,7 +886,7 @@ Follow this compact checklist when preparing a release to PyPI:
    - Push the tag to GitHub *or* trigger `.github/workflows/release.yml` via **Run workflow** (the maintainer prefers manual dispatch).
 4. **Automation handles publishing:**
    - The release workflow builds wheels/sdists with `uv build`, runs twine checks + smoke tests, and calls `uv publish` using OIDC—no PyPI token needed.
-   - Monitor the workflow logs; once it succeeds, verify the package on https://pypi.org/project/adobe-helper/ (staging URL shown in the workflow file may still reference legacy futunn-helper—update if needed).
+   - Monitor the workflow logs; once it succeeds, verify the package at https://pypi.org/project/adobe-helper/.
 
 If the workflow cannot access PyPI (e.g., environment missing), fix the configuration, rerun the job, and keep AGENTS.md in sync with any process changes.
 
