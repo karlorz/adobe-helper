@@ -435,41 +435,41 @@ class AdobePDFConverter:
     async def reset_session_data(self) -> None:
         """
         Reset all session data (mimics clearing browser data)
-        
+
         This clears:
         - Usage tracking data
         - Session cookies
         - Access tokens
         - Conversion counters
-        
+
         Use this when you hit limits and want to start fresh,
         similar to clearing browser data in Chrome.
         """
         logger.info("Resetting session data...")
-        
+
         # Reset usage tracker
         if self.usage_tracker:
             self.usage_tracker.reset_usage()
             logger.info("✓ Usage tracking reset")
-        
+
         # Clear cookies
         if isinstance(self.session_manager, AnonymousSessionManager):
             # Clear all saved cookies
             if self.session_manager.cookie_manager:
                 count = self.session_manager.cookie_manager.clear_all_cookies()
                 logger.info(f"✓ Cleared {count} cookie file(s)")
-            
+
             # Force new session
             await self.session_manager.create_fresh_session()
             logger.info("✓ Created fresh session")
-        
+
         elif isinstance(self.session_manager, SessionManager):
             # Clear session info
             await self.session_manager.clear_session()
             # Re-initialize
             await self.session_manager.initialize()
             logger.info("✓ Session re-initialized")
-        
+
         logger.info("Session reset complete - ready for new conversions")
 
     @classmethod
@@ -480,15 +480,15 @@ class AdobePDFConverter:
     ) -> "AdobePDFConverter":
         """
         Create a new converter instance with completely fresh session data
-        
+
         This is equivalent to:
         1. Clearing browser data in Chrome
         2. Creating a new converter instance
-        
+
         Args:
             session_dir: Directory for session data storage
             bypass_local_limits: Whether to bypass local usage limits
-            
+
         Returns:
             New AdobePDFConverter instance with fresh session
         """
