@@ -6,7 +6,7 @@ import hashlib
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -126,7 +126,11 @@ class FileUploader:
                 progress_callback,
             )
         else:
-            simple_uri = self._resolve_resource_uri(upload_resource, upload_url)
+            simple_uri = self._resolve_resource_uri(
+                upload_resource,
+                upload_url,
+                stage="upload",
+            )
             response_payload = await self._upload_small(
                 file_info,
                 simple_uri,
@@ -200,7 +204,7 @@ class FileUploader:
                     timeout=UPLOAD_TIMEOUT,
                 )
                 response.raise_for_status()
-                payload = response.json()
+                payload = self._ensure_dict(response.json(), "upload")
         except httpx.HTTPStatusError as exc:
             logger.error("HTTP error during asset upload: %s", exc)
             raise UploadError(
@@ -239,7 +243,7 @@ class FileUploader:
         progress_callback: Callable[[UploadProgress], None] | None,
     ) -> dict[str, Any]:
         block_size = self._determine_block_size(file_info.file_size)
-        init_uri = self._resolve_resource_uri(init_resource, None)
+        init_uri = self._resolve_resource_uri(init_resource, None, stage="initialize")
         init_headers = self._augment_headers(headers, generate_request_id())
         init_headers["Accept"] = self._select_media_type(
             init_resource,
@@ -267,7 +271,7 @@ class FileUploader:
                 timeout=UPLOAD_TIMEOUT,
             )
             init_response.raise_for_status()
-            init_data = init_response.json()
+            init_data = self._ensure_dict(init_response.json(), "initialize")
         except httpx.HTTPStatusError as exc:
             raise UploadError(
                 ERROR_UPLOAD_FAILED.format(reason=f"HTTP {exc.response.status_code}"),
@@ -350,7 +354,7 @@ class FileUploader:
             "on_dup_name": "auto_rename",
         }
 
-        finalize_uri = self._resolve_resource_uri(finalize_resource, None)
+        finalize_uri = self._resolve_resource_uri(finalize_resource, "", stage="finalize")
 
         try:
             finalize_response = await self.client.post(
@@ -360,7 +364,7 @@ class FileUploader:
                 timeout=UPLOAD_TIMEOUT,
             )
             finalize_response.raise_for_status()
-            finalize_data = finalize_response.json()
+            finalize_data = self._ensure_dict(finalize_response.json(), "finalize")
         except httpx.HTTPStatusError as exc:
             raise UploadError(
                 ERROR_UPLOAD_FAILED.format(reason=f"HTTP {exc.response.status_code}"),
@@ -437,7 +441,7 @@ class FileUploader:
                 timeout=UPLOAD_TIMEOUT,
             )
             response.raise_for_status()
-            payload = response.json()
+            payload = self._ensure_dict(response.json(), "monitor")
 
             status = (payload.get("status") or payload.get("state") or "").lower()
             if status not in {"processing", "in progress", "pending"}:
@@ -486,7 +490,7 @@ class FileUploader:
                 timeout=UPLOAD_TIMEOUT,
             )
             response.raise_for_status()
-            data = response.json()
+            data = self._ensure_dict(response.json(), "discovery")
         except httpx.HTTPStatusError as exc:
             raise UploadError(
                 ERROR_UPLOAD_FAILED.format(reason=f"HTTP {exc.response.status_code}"),
@@ -512,18 +516,35 @@ class FileUploader:
             )
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    def _resolve_resource_uri(self, resource: dict[str, Any] | None, fallback: str) -> str:
-        if not resource:
-            return fallback
-        uri = resource.get("uri")
-        if isinstance(uri, str) and uri:
-            return uri
-        return fallback
+    def _resolve_resource_uri(
+        self,
+        resource: dict[str, Any] | None,
+        fallback: str | None,
+        *,
+        stage: str,
+    ) -> str:
+        if resource:
+            uri = resource.get("uri") or resource.get("href")
+            if isinstance(uri, str) and uri:
+                return uri
 
-    def _select_media_type(self, resource: dict[str, Any], key: str, default: str) -> str:
+        if fallback and fallback.strip():
+            return fallback
+
+        raise UploadError(
+            ERROR_UPLOAD_FAILED.format(reason="Resource URI missing"),
+            details={"stage": stage},
+        )
+
+    def _select_media_type(self, resource: dict[str, Any] | None, key: str, default: str) -> str:
+        if not resource:
+            return default
+
         value = resource.get(key)
         if isinstance(value, dict) and value:
-            return next(iter(value.values()))
+            first = next(iter(value.values()))
+            if isinstance(first, str) and first:
+                return first
         if isinstance(value, str) and value:
             return value
         return default
@@ -556,3 +577,11 @@ class FileUploader:
 
         payload["asset_uri"] = asset_uri
         return payload
+
+    def _ensure_dict(self, payload: Any, stage: str) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise UploadError(
+                ERROR_UPLOAD_FAILED.format(reason="Unexpected response structure"),
+                details={"stage": stage, "response": str(payload)[:500]},
+            )
+        return cast(dict[str, Any], payload)

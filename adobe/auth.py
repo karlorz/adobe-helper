@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from secrets import token_hex
+from typing import Any, cast
 
 import httpx
 
@@ -107,8 +108,12 @@ class SessionManager:
             html_content = response.text
             self.csrf_token = extract_csrf_token(html_content)
 
-            # Extract cookies
-            cookies = {cookie.name: cookie.value for cookie in self.client.cookies.jar}
+            # Extract cookies (only keep string values)
+            cookies = {
+                str(name): value
+                for name, value in self.client.cookies.items()
+                if isinstance(name, str) and isinstance(value, str)
+            }
             self.session_id = extract_session_id(cookies)
 
             # Fetch Adobe IMS guest access token for API calls
@@ -201,7 +206,14 @@ class SessionManager:
                     continue
 
                 response.raise_for_status()
-                payload = response.json()
+                raw_payload: Any = response.json()
+                if not isinstance(raw_payload, dict):
+                    logger.error("Unexpected IMS response payload type: %s", type(raw_payload))
+                    raise AuthenticationError(
+                        "Authentication token response malformed",
+                        details={"response": str(raw_payload)[:500]},
+                    )
+                payload = cast(dict[str, Any], raw_payload)
                 break
 
             except httpx.HTTPStatusError as exc:
@@ -229,22 +241,26 @@ class SessionManager:
                 details={"status_code": 403},
             )
 
-        access_token = payload.get("access_token")
-        expires_in = payload.get("expires_in")
-
-        if not access_token:
+        access_token_raw = payload.get("access_token")
+        if not isinstance(access_token_raw, str) or not access_token_raw.strip():
             logger.error("IMS response missing access token: %s", payload)
             raise AuthenticationError(
                 "Authentication token missing from IMS response",
                 details={"response": payload},
             )
+        access_token = access_token_raw.strip()
 
         expires_at: datetime | None = None
+        expires_in_raw = payload.get("expires_in")
+        expires_seconds: int | None = None
 
-        try:
-            expires_seconds = int(expires_in) if expires_in is not None else None
-        except (TypeError, ValueError):
-            expires_seconds = None
+        if isinstance(expires_in_raw, (int, float)):
+            expires_seconds = int(expires_in_raw)
+        elif isinstance(expires_in_raw, str):
+            try:
+                expires_seconds = int(expires_in_raw)
+            except ValueError:
+                expires_seconds = None
 
         if expires_seconds is not None:
             expires_at = datetime.now() + timedelta(seconds=expires_seconds)
@@ -278,13 +294,17 @@ class SessionManager:
 
         html_content = response.text
         self.csrf_token = extract_csrf_token(html_content)
-        cookies = {cookie.name: cookie.value for cookie in self.client.cookies.jar}
-        self.session_id = extract_session_id(cookies)
+        session_cookies = {
+            str(name): value
+            for name, value in self.client.cookies.items()
+            if isinstance(name, str) and isinstance(value, str)
+        }
+        self.session_id = extract_session_id(session_cookies)
 
         if self.session_info is not None:
             self.session_info.csrf_token = self.csrf_token
             self.session_info.session_id = self.session_id
-            self.session_info.cookies = cookies
+            self.session_info.cookies = session_cookies
 
     def is_active(self) -> bool:
         """

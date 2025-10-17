@@ -139,6 +139,36 @@ class AdobePDFConverter:
         self._initialized = True
         logger.info("Adobe PDF Converter initialized successfully")
 
+    def _ensure_components(
+        self,
+    ) -> tuple[
+        httpx.AsyncClient,
+        SessionManager | AnonymousSessionManager,
+        FileUploader,
+        ConversionManager,
+        FileDownloader,
+    ]:
+        """Return initialized core components or raise an error."""
+
+        if (
+            self.client is None
+            or self.session_manager is None
+            or self.uploader is None
+            or self.converter is None
+            or self.downloader is None
+        ):
+            raise AdobeHelperError(
+                "AdobePDFConverter is not initialized. Call initialize() before converting.",
+            )
+
+        return (
+            self.client,
+            self.session_manager,
+            self.uploader,
+            self.converter,
+            self.downloader,
+        )
+
     async def convert_pdf_to_word(
         self,
         pdf_path: Path,
@@ -165,6 +195,8 @@ class AdobePDFConverter:
         # Ensure initialized
         if not self._initialized:
             await self.initialize()
+
+        client, _session_manager, uploader, converter, downloader = self._ensure_components()
 
         # Check usage quota (only if not bypassing local limits)
         if (
@@ -217,7 +249,7 @@ class AdobePDFConverter:
             # Step 1: Upload PDF file
             logger.info("Uploading PDF file...")
             upload_response = await self._with_token_retry(
-                lambda h: self.uploader.upload_with_retry(
+                lambda h: uploader.upload_with_retry(
                     file_path=pdf_path,
                     upload_url=upload_url,
                     headers=h,
@@ -237,7 +269,7 @@ class AdobePDFConverter:
                 )
 
             job = await self._with_token_retry(
-                lambda h: self.converter.start_export_job(
+                lambda h: converter.start_export_job(
                     asset_uri=asset_uri,
                     conversion_url=conversion_url,
                     headers=h,
@@ -249,13 +281,13 @@ class AdobePDFConverter:
             # Step 3: Wait for completion (if requested)
             if wait:
                 logger.info("Waiting for conversion to complete...")
-                status_data = await self.converter.wait_for_completion(
+                status_data = await converter.wait_for_completion(
                     job_uri=job.job_uri,
                     status_url=status_url,
                     headers=headers,
                 )
 
-                result_asset_uri = self.converter.extract_asset_uri(status_data)
+                result_asset_uri = converter.extract_asset_uri(status_data)
 
                 if not result_asset_uri:
                     raise AdobeHelperError(
@@ -266,7 +298,7 @@ class AdobePDFConverter:
                 # Fetch direct download URL
                 logger.info("Fetching download URI...")
                 download_response = await self._with_token_retry(
-                    lambda h: self.client.get(
+                    lambda h: client.get(
                         download_url,
                         params={
                             "asset_uri": result_asset_uri,
@@ -302,13 +334,13 @@ class AdobePDFConverter:
 
                 # Step 4: Generate output path if not provided
                 if output_path is None:
-                    output_path = self.downloader.generate_output_filename(
+                    output_path = downloader.generate_output_filename(
                         pdf_path, conversion_type="docx"
                     )
 
                 # Step 5: Download converted file
                 logger.info("Downloading converted file...")
-                result_path = await self.downloader.download_with_retry(
+                result_path = await downloader.download_with_retry(
                     download_url=direct_download,
                     output_path=output_path,
                     headers=direct_headers,
@@ -465,7 +497,7 @@ class AdobePDFConverter:
 
         elif isinstance(self.session_manager, SessionManager):
             # Clear session info
-            await self.session_manager.clear_session()
+            self.session_manager.clear_session()
             # Re-initialize
             await self.session_manager.initialize()
             logger.info("✓ Session re-initialized")

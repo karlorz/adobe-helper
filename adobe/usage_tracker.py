@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any, cast
 
 from adobe.constants import DEFAULT_SESSION_DIR, FREE_TIER_DAILY_LIMIT, USAGE_FILE
 
@@ -39,9 +40,9 @@ class FreeUsageTracker:
         self.usage_dir.mkdir(parents=True, exist_ok=True)
 
         # Load or initialize usage data
-        self.usage_data = self._load_usage()
+        self.usage_data: dict[str, Any] = self._load_usage()
 
-    def _load_usage(self) -> dict:
+    def _load_usage(self) -> dict[str, Any]:
         """
         Load usage data from disk
 
@@ -53,7 +54,13 @@ class FreeUsageTracker:
 
         try:
             with open(self.usage_file) as f:
-                data = json.load(f)
+                raw_data = json.load(f)
+
+            if not isinstance(raw_data, dict):
+                logger.error("Usage data malformed; resetting usage file")
+                return self._create_empty_usage()
+
+            data = cast(dict[str, Any], raw_data)
 
             # Check if date has changed (new day)
             today = str(date.today())
@@ -67,7 +74,7 @@ class FreeUsageTracker:
             logger.error(f"Failed to load usage data: {e}")
             return self._create_empty_usage()
 
-    def _create_empty_usage(self) -> dict:
+    def _create_empty_usage(self) -> dict[str, Any]:
         """
         Create empty usage data structure for current day
 
@@ -101,7 +108,7 @@ class FreeUsageTracker:
         # Refresh data in case day has changed
         self.usage_data = self._load_usage()
 
-        current_count = self.usage_data.get("count", 0)
+        current_count = int(self.usage_data.get("count", 0))
         can_proceed = current_count < self.daily_limit
 
         if not can_proceed:
@@ -119,11 +126,11 @@ class FreeUsageTracker:
         # Refresh data
         self.usage_data = self._load_usage()
 
-        # Increment counter
-        self.usage_data["count"] += 1
+        current_count = int(self.usage_data.get("count", 0))
+        self.usage_data["count"] = current_count + 1
 
         # Record conversion details
-        conversion_record = {
+        conversion_record: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "filename": filename,
         }
@@ -148,7 +155,7 @@ class FreeUsageTracker:
         """
         # Refresh data
         self.usage_data = self._load_usage()
-        return self.usage_data.get("count", 0)
+        return int(self.usage_data.get("count", 0))
 
     def get_remaining(self) -> int:
         """
@@ -165,7 +172,7 @@ class FreeUsageTracker:
         self._save_usage()
         logger.info("Usage data reset")
 
-    def get_conversion_history(self) -> list[dict]:
+    def get_conversion_history(self) -> list[dict[str, Any]]:
         """
         Get the list of conversions performed today
 
@@ -174,9 +181,12 @@ class FreeUsageTracker:
         """
         # Refresh data
         self.usage_data = self._load_usage()
-        return self.usage_data.get("conversions", [])
+        conversions = self.usage_data.get("conversions", [])
+        if not isinstance(conversions, list):
+            return []
+        return [cast(dict[str, Any], item) for item in conversions if isinstance(item, dict)]
 
-    def get_usage_summary(self) -> dict:
+    def get_usage_summary(self) -> dict[str, Any]:
         """
         Get a summary of usage statistics
 
@@ -186,14 +196,16 @@ class FreeUsageTracker:
         # Refresh data
         self.usage_data = self._load_usage()
 
+        count = int(self.usage_data.get("count", 0))
+        remaining = self.get_remaining()
+        percentage_used = (count / self.daily_limit * 100) if self.daily_limit > 0 else 0
+
         return {
-            "date": self.usage_data["date"],
-            "count": self.usage_data["count"],
+            "date": str(self.usage_data.get("date", str(date.today()))),
+            "count": count,
             "limit": self.daily_limit,
-            "remaining": self.get_remaining(),
-            "percentage_used": (
-                (self.usage_data["count"] / self.daily_limit) * 100 if self.daily_limit > 0 else 0
-            ),
+            "remaining": remaining,
+            "percentage_used": percentage_used,
         }
 
     def __str__(self) -> str:

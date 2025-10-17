@@ -8,6 +8,7 @@ status polling, and completion tracking.
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any, cast
 
 import httpx
 
@@ -91,7 +92,14 @@ class ConversionManager:
                 details={"error": str(exc)},
             ) from exc
 
-        payload = response.json()
+        raw_payload = response.json()
+        if not isinstance(raw_payload, dict):
+            raise ConversionError(
+                "Export job response malformed",
+                details={"response": str(raw_payload)[:500]},
+            )
+
+        payload = cast(dict[str, Any], raw_payload)
         job_uri = payload.get("job_uri")
 
         if not job_uri:
@@ -100,12 +108,14 @@ class ConversionManager:
                 details={"response": payload},
             )
 
-        job = ConversionJob(
-            job_uri=job_uri,
-            asset_uri=asset_uri,
-            status=ConversionStatus.PROCESSING,
-            conversion_type=conversion_type,
-            created_at=datetime.now(),
+        job = ConversionJob.model_validate(
+            {
+                "job_uri": job_uri,
+                "asset_uri": asset_uri,
+                "status": ConversionStatus.PROCESSING,
+                "conversion_type": conversion_type,
+                "created_at": datetime.now(),
+            }
         )
 
         logger.info("Adobe export job accepted: %s", job_uri)
@@ -121,7 +131,9 @@ class ConversionManager:
         }
         return format_map.get(conversion_type, "docx")
 
-    async def check_status(self, job_uri: str, status_url: str, headers: dict[str, str]) -> dict:
+    async def check_status(
+        self, job_uri: str, status_url: str, headers: dict[str, str]
+    ) -> dict[str, Any]:
         """
         Check the status of a conversion job
 
@@ -144,7 +156,14 @@ class ConversionManager:
             )
             response.raise_for_status()
 
-            return response.json()
+            raw_payload = response.json()
+            if not isinstance(raw_payload, dict):
+                raise ConversionError(
+                    "Job status response malformed",
+                    details={"job_uri": job_uri, "response": str(raw_payload)[:500]},
+                )
+
+            return cast(dict[str, Any], raw_payload)
 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error checking status: {e}")

@@ -81,7 +81,17 @@ class CookieManager:
             with open(cookie_file) as f:
                 cookie_data = json.load(f)
 
-            cookies = cookie_data.get("cookies", {})
+            cookies_raw = cookie_data.get("cookies", {})
+            if not isinstance(cookies_raw, dict):
+                logger.debug(
+                    "Cookie payload malformed for session %s; returning empty dict",
+                    session_id[:8],
+                )
+                return {}
+
+            cookies: dict[str, str] = {
+                str(name): str(value) for name, value in cookies_raw.items() if value is not None
+            }
             logger.debug(f"Loaded {len(cookies)} cookies for session {session_id[:8]}...")
 
             return cookies
@@ -148,7 +158,7 @@ class CookieManager:
         Returns:
             List of session IDs
         """
-        session_ids = []
+        session_ids: list[str] = []
 
         try:
             for cookie_file in self.cookie_dir.glob("*.json"):

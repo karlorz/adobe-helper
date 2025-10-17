@@ -21,7 +21,7 @@ import json
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from adobe.constants import DEFAULT_SESSION_DIR
 
@@ -71,11 +71,16 @@ def load_json(path: Path) -> dict[str, Any]:
     """Load JSON data from *path*, returning an empty mapping on failure."""
 
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
     except json.JSONDecodeError as exc:  # pragma: no cover - protects CLI users
         raise SystemExit(f"Invalid JSON in {path}: {exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise SystemExit(f"Discovery file {path} must contain a JSON object at the top level")
+
+    return cast(dict[str, Any], raw)
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
