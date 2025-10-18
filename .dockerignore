@@ -136,7 +136,7 @@ CLAUDE.local.md
 
 # Adobe Helper specific
 .adobe-helper/
-*.pdf
+!*.pdf
 *.docx
 *.xlsx
 *.pptx
