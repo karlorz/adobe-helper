@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.1.0 (2025-10-21)
+
+### Chores
+
+- Examples/adobe/basic_usage.py
+  ([`e19ead2`](https://github.com/karlorz/adobe-helper/commit/e19ead27c40ed7be54c935969a61534f547246e7))
+
+### Features
+
+- Implement multi-tenant architecture and dynamic endpoints
+  ([`d5b90bf`](https://github.com/karlorz/adobe-helper/commit/d5b90bf60accbf1f06df1d17d6e75a497f2479f2))
+
+### Testing
+
+- Docker example
+  ([`679a21f`](https://github.com/karlorz/adobe-helper/commit/679a21fb1c9aacd96f8841da18a7bd82a3904dc2))
+
+
 ## v1.0.6 (2025-10-17)
 
 ### Bug Fixes
