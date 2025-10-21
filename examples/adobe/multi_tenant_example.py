@@ -89,9 +89,9 @@ async def main():
     print("Summary:")
     print(f"{'='*60}")
     if result1:
-        print(f"✓ Session 1: Success")
+        print("✓ Session 1: Success")
     else:
-        print(f"✗ Session 1: Failed")
+        print("✗ Session 1: Failed")
 
     print("\nNote: Each session automatically:")
     print("  1. Fetches a guest access token from Adobe IMS")
@@ -116,14 +116,18 @@ async def show_tenant_extraction():
         session_mgr = await converter.session_manager.get_session()
         session_info = await session_mgr.ensure_access_token()
 
-        print(f"Access Token: {session_info.access_token[:30]}..." if session_info.access_token else "None")
+        print(
+            f"Access Token: {session_info.access_token[:30]}..."
+            if session_info.access_token
+            else "None"
+        )
         print(f"Tenant ID: {session_info.tenant_id}")
 
         if session_info.tenant_id:
             from adobe.urls import get_endpoints_for_session
 
             endpoints = get_endpoints_for_session(tenant_id=session_info.tenant_id)
-            print(f"\nTenant-specific endpoints:")
+            print("\nTenant-specific endpoints:")
             for name, url in endpoints.items():
                 print(f"  {name:12} → {url}")
         else:
