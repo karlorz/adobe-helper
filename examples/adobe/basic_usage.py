@@ -5,9 +5,16 @@ This example demonstrates the simplest way to convert a PDF to Word.
 """
 
 import asyncio
+import logging
 from pathlib import Path
 
 from adobe import AdobePDFConverter
+
+# Configure logging to see conversion progress
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 
 async def main():
