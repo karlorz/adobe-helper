@@ -10,6 +10,47 @@ This is an **Adobe PDF-to-Word Helper** library inspired by the architecture of 
 
 **Reference Architecture:** Adobe Acrobat Online - Uses Unity workflow system with file upload, conversion processing, and download capabilities.
 
+## Recent Progress (2025-10-21)
+
+### ✅ Multi-Tenant Architecture Implemented
+
+The library now supports **automatic tenant discovery and dynamic endpoint switching**:
+
+1. **Logging Configuration Fixed**
+   - Added `logging.basicConfig()` to examples to display conversion progress
+   - Users now see real-time INFO messages during conversion workflow
+
+2. **Dynamic Tenant Discovery**
+   - Each session automatically discovers its numeric tenant ID during upload
+   - Initial IMS token provides client ID (e.g., `dc-prod-virgoweb`)
+   - Discovery endpoint (`/discovery`) returns numeric tenant (e.g., `1761640175`)
+   - Endpoints are rebuilt automatically with the discovered tenant
+   - Different sessions can use different tenants without conflicts
+
+3. **Working Flow**
+   ```
+   1. Session Init → Extract IMS token tenant: "dc-prod-virgoweb"
+   2. Upload → Call /discovery → Discover numeric tenant: "1761640175"
+   3. Update Session → Store numeric tenant ID
+   4. Rebuild Endpoints → Use tenant-specific URLs
+   5. Convert/Download → All APIs use correct tenant: "1761640175"
+   ```
+
+4. **Key Changes**
+   - `adobe/auth.py`: Added `extract_tenant_from_ims_response()` method
+   - `adobe/upload.py`: Added `get_discovered_tenant_id()` method
+   - `adobe/client.py`: Automatic tenant extraction and endpoint rebuilding
+   - `adobe/urls.py`: `get_endpoints_for_session()` now accepts dynamic tenant_id
+   - `adobe/models.py`: `SessionInfo` includes tenant_id field
+   - `examples/adobe/basic_usage.py`: Added logging configuration
+
+5. **Benefits**
+   - ✅ No hardcoded tenant IDs required
+   - ✅ Sessions are tenant-isolated
+   - ✅ Supports multi-region deployments
+   - ✅ Handles tenant rotation automatically
+   - ✅ Each new session gets its own tenant from Adobe's servers
+
 ## Key Features
 
 - File upload mechanism (drag-and-drop or file selection)
@@ -64,9 +105,13 @@ Key endpoints from network analysis:
 - Export job submission: https://pdfnow-<region>.adobe.io/<tenant>/assets/exportpdf (POST JSON with `asset_uri`)
 - Job status polling: https://pdfnow-<region>.adobe.io/<tenant>/jobs/status?job_uri=...
 - Download URI negotiation: https://pdfnow-<region>.adobe.io/<tenant>/assets/download_uri?asset_uri=...
+- Discovery endpoint: https://pdfnow-<region>.adobe.io/<tenant>/discovery (returns numeric tenant ID)
 ```
 
-**Important:** Browser sessions surface an `asset_uri` in the URL fragment (`#assets=...`), but the backend still expects the asset bytes to be uploaded via the `/assets` endpoint before calling `exportpdf`. Our client must reproduce that upload step to obtain a valid `asset_uri`.
+**Important:** 
+- Browser sessions surface an `asset_uri` in the URL fragment (`#assets=...`), but the backend still expects the asset bytes to be uploaded via the `/assets` endpoint before calling `exportpdf`. Our client must reproduce that upload step to obtain a valid `asset_uri`.
+- The `<tenant>` placeholder is dynamically discovered per session via the `/discovery` endpoint and stored in session cache.
+- Tenant IDs can vary between sessions and regions (e.g., `dc-prod-virgoweb` client ID → `1761640175` numeric tenant).
 
 **Endpoint caching:** On initialization the library copies any discovered endpoint file into `~/.adobe-helper/discovered_endpoints.json`. If nothing exists it writes a fresh template with the same Chrome DevTools checklist. Keep the canonical capture under `docs/discovery/discovered_endpoints.json` (or `archive/discovery/` for historical snapshots) current so new installs inherit working URLs.
 ```

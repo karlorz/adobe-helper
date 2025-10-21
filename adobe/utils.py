@@ -288,3 +288,92 @@ def now_seconds() -> float:
     """Return the current time in seconds as a float."""
 
     return time.time()
+
+
+def extract_tenant_id_from_token(access_token: str) -> str | None:
+    """
+    Extract tenant ID from Adobe IMS JWT access token
+
+    Adobe JWT tokens contain a 'client_id' or 'user_id' field that can serve
+    as the tenant identifier for API endpoints.
+
+    Args:
+        access_token: Adobe IMS JWT access token
+
+    Returns:
+        Tenant ID if found, None otherwise
+    """
+    if not access_token or not isinstance(access_token, str):
+        return None
+
+    try:
+        import base64
+
+        # JWT tokens have 3 parts separated by dots: header.payload.signature
+        parts = access_token.split(".")
+        if len(parts) != 3:
+            return None
+
+        # Decode the payload (second part)
+        # Add padding if needed for base64 decoding
+        payload_b64 = parts[1]
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+
+        payload_json = base64.urlsafe_b64decode(payload_b64)
+        payload = json.loads(payload_json)
+
+        # Try to extract tenant-like identifiers
+        # Adobe uses different fields: client_id, user_id, sub, etc.
+        tenant_candidates = [
+            payload.get("client_id"),
+            payload.get("user_id"),
+            payload.get("sub"),
+            payload.get("tenant_id"),
+            payload.get("org_id"),
+        ]
+
+        for candidate in tenant_candidates:
+            if candidate and isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+
+        return None
+
+    except (ValueError, json.JSONDecodeError, KeyError):
+        return None
+
+
+def extract_tenant_from_ims_response(ims_response: dict) -> str | None:
+    """
+    Extract tenant ID from IMS authentication response
+
+    Args:
+        ims_response: IMS response dictionary
+
+    Returns:
+        Tenant ID if found, None otherwise
+    """
+    if not isinstance(ims_response, dict):
+        return None
+
+    # Try direct fields
+    tenant_candidates = [
+        ims_response.get("tenant_id"),
+        ims_response.get("org_id"),
+        ims_response.get("client_id"),
+        ims_response.get("user_id"),
+    ]
+
+    for candidate in tenant_candidates:
+        if candidate and isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+
+    # Try extracting from access token
+    access_token = ims_response.get("access_token")
+    if access_token:
+        tenant = extract_tenant_id_from_token(access_token)
+        if tenant:
+            return tenant
+
+    return None

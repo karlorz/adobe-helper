@@ -320,3 +320,81 @@ def get_api_endpoints(config_path: str | Path | None = None) -> dict[str, str]:
     _ensure_home_discovery_file(cached_values, source if cached_values else None)
 
     return endpoints
+
+
+def build_endpoint_urls(tenant_id: str, region: str = "jpn3") -> dict[str, str]:
+    """
+    Build Adobe API endpoint URLs for a specific tenant ID
+
+    Adobe's API endpoints follow the pattern:
+    https://pdfnow-{region}.adobe.io/{tenant_id}/{endpoint}
+
+    Args:
+        tenant_id: Adobe tenant identifier (extracted from IMS token)
+        region: Adobe region (default: jpn3, can be: jpn3, va7, etc.)
+
+    Returns:
+        Dictionary with endpoint URLs for upload, conversion, status, download
+    """
+    base_url = f"https://pdfnow-{region}.adobe.io/{tenant_id}"
+
+    return {
+        "upload": f"{base_url}/assets",
+        "conversion": f"{base_url}/assets/exportpdf",
+        "status": f"{base_url}/jobs/status",
+        "download": f"{base_url}/assets/download_uri",
+    }
+
+
+def substitute_tenant_in_url(url: str, tenant_id: str) -> str:
+    """
+    Replace <tenant> placeholder in URL with actual tenant ID
+
+    Args:
+        url: URL possibly containing <tenant> placeholder
+        tenant_id: Actual tenant ID to substitute
+
+    Returns:
+        URL with tenant ID substituted
+    """
+    import re
+
+    # Replace numeric tenant ID pattern (e.g., /1761291926/)
+    pattern = r"/\d{10,}/"
+    if re.search(pattern, url):
+        url = re.sub(pattern, f"/{tenant_id}/", url)
+
+    # Replace <tenant> placeholder
+    url = url.replace("<tenant>", tenant_id)
+
+    return url
+
+
+def get_endpoints_for_session(
+    tenant_id: str | None = None,
+    config_path: str | Path | None = None,
+) -> dict[str, str]:
+    """
+    Get API endpoints for a specific session, with tenant substitution
+
+    This combines:
+    1. Static/discovered endpoints from config files
+    2. Tenant ID substitution for dynamic session-based endpoints
+
+    Args:
+        tenant_id: Tenant ID from the current session (if available)
+        config_path: Optional path to endpoint discovery file
+
+    Returns:
+        Dictionary with endpoint URLs
+    """
+    # Get base endpoints from config
+    endpoints = get_api_endpoints(config_path)
+
+    # If we have a tenant ID, substitute it into the URLs
+    if tenant_id:
+        logger.info(f"Using tenant ID {tenant_id} for API endpoints")
+        for key, url in endpoints.items():
+            endpoints[key] = substitute_tenant_in_url(url, tenant_id)
+
+    return endpoints

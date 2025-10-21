@@ -121,6 +121,7 @@ class SessionInfo(BaseModel):
     access_token_expires_at: datetime | None = Field(
         None, description="When the current access token expires"
     )
+    tenant_id: str | None = Field(None, description="Adobe tenant ID for API endpoints")
 
     def is_expired(self) -> bool:
         """Check if the session has expired"""

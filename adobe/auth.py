@@ -33,7 +33,7 @@ from adobe.urls import (
     PDF_TO_WORD_PAGE,
     SESSION_INIT_HEADERS,
 )
-from adobe.utils import extract_csrf_token, extract_session_id
+from adobe.utils import extract_csrf_token, extract_session_id, extract_tenant_from_ims_response
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ class SessionManager:
         self.session_id: str | None = None
         self.access_token: str | None = None
         self.access_token_expires_at: datetime | None = None
+        self.tenant_id: str | None = None
 
     async def initialize(self) -> SessionInfo:
         """
@@ -130,6 +131,7 @@ class SessionManager:
                 is_anonymous=True,
                 access_token=self.access_token,
                 access_token_expires_at=self.access_token_expires_at,
+                tenant_id=self.tenant_id,
             )
 
             logger.info(
@@ -268,9 +270,17 @@ class SessionManager:
         self.access_token = access_token
         self.access_token_expires_at = expires_at
 
+        # Extract tenant ID from IMS response or access token
+        tenant_id = extract_tenant_from_ims_response(payload)
+        if tenant_id:
+            self.tenant_id = tenant_id
+            logger.info(f"Extracted tenant ID: {tenant_id}")
+
         if self.session_info is not None:
             self.session_info.access_token = self.access_token
             self.session_info.access_token_expires_at = self.access_token_expires_at
+            if self.tenant_id:
+                self.session_info.tenant_id = self.tenant_id
 
         logger.info("Obtained Adobe IMS guest access token")
 
@@ -395,6 +405,7 @@ class SessionManager:
                     if self.session_info.access_token_expires_at
                     else None
                 ),
+                "tenant_id": self.session_info.tenant_id,
             }
 
             with open(session_file, "w") as f:
@@ -446,6 +457,7 @@ class SessionManager:
                 is_anonymous=session_data.get("is_anonymous", True),
                 access_token=session_data.get("access_token"),
                 access_token_expires_at=token_expires_at,
+                tenant_id=session_data.get("tenant_id"),
             )
 
             # Restore tokens
@@ -453,6 +465,7 @@ class SessionManager:
             self.session_id = self.session_info.session_id
             self.access_token = self.session_info.access_token
             self.access_token_expires_at = self.session_info.access_token_expires_at
+            self.tenant_id = self.session_info.tenant_id
 
             # Restore cookies to client
             for name, value in self.session_info.cookies.items():

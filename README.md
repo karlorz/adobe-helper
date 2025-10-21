@@ -11,6 +11,19 @@
 
 **This project is ~98% complete.** The architecture, all modules, and examples are fully implemented and tested. However, **API endpoint discovery is required** before the library can perform actual conversions.
 
+### Recent Updates (2025-10-21)
+
+✅ **Multi-Tenant Architecture**
+- Automatic tenant discovery during session initialization
+- Dynamic endpoint switching per session
+- Support for multiple regions and tenant IDs
+- Each session discovers its own numeric tenant ID from Adobe's servers
+
+✅ **Logging Enhancement**
+- Examples now include proper logging configuration
+- Real-time visibility into conversion progress
+- Better debugging and troubleshooting support
+
 See [docs/discovery/API_DISCOVERY.md](docs/discovery/API_DISCOVERY.md) for instructions on discovering Adobe's actual API endpoints using Chrome DevTools.
 
 ## Features
@@ -68,8 +81,15 @@ pip install -e .
 
 ```python
 import asyncio
+import logging
 from pathlib import Path
 from adobe import AdobePDFConverter
+
+# Configure logging to see conversion progress
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 async def main():
     # Convert a PDF to Word (bypasses local limits by default)
@@ -282,9 +302,11 @@ uv run mypy adobe/
 - [x] Conversion workflow manager
 - [x] File download handler
 - [x] Main client class
-- [x] Example scripts
+- [x] Example scripts with logging
 - [x] Unit tests (30 tests, 100% pass rate)
 - [x] Documentation
+- [x] **Multi-tenant architecture with automatic discovery** ✨ NEW
+- [x] **Dynamic endpoint switching per session** ✨ NEW
 
 ### 🔄 Remaining
 

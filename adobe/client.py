@@ -40,6 +40,7 @@ from adobe.urls import (
     COMMON_HEADERS,
     DEFAULT_USER_AGENT,
     get_api_endpoints,
+    get_endpoints_for_session,
 )
 from adobe.usage_tracker import FreeUsageTracker
 
@@ -218,7 +219,23 @@ class AdobePDFConverter:
         logger.info(f"Converting PDF to Word: {pdf_path.name}")
 
         try:
-            endpoints = get_api_endpoints()
+            # Get tenant ID from session manager
+            tenant_id: str | None = None
+            if isinstance(self.session_manager, SessionManager):
+                tenant_id = self.session_manager.tenant_id
+            elif isinstance(self.session_manager, AnonymousSessionManager):
+                current_session = await self.session_manager.get_session()
+                session_info = await current_session.ensure_access_token()
+                tenant_id = session_info.tenant_id
+
+            # Get endpoints with tenant substitution
+            if tenant_id:
+                logger.info(f"Using tenant-specific endpoints for tenant: {tenant_id}")
+                endpoints = get_endpoints_for_session(tenant_id=tenant_id)
+            else:
+                logger.warning("No tenant ID available, using default endpoints")
+                endpoints = get_api_endpoints()
+
             self.endpoints = endpoints
 
             upload_url = endpoints.get("upload", "")
@@ -257,6 +274,30 @@ class AdobePDFConverter:
                 ),
                 headers,
             )
+
+            # Extract discovered tenant ID from uploader's discovery cache
+            discovered_tenant = uploader.get_discovered_tenant_id()
+            if discovered_tenant and discovered_tenant != tenant_id:
+                logger.info(f"Using discovered numeric tenant ID: {discovered_tenant}")
+                tenant_id = discovered_tenant
+
+                # Update session with the discovered tenant
+                if isinstance(self.session_manager, SessionManager):
+                    self.session_manager.tenant_id = tenant_id
+                    if self.session_manager.session_info:
+                        self.session_manager.session_info.tenant_id = tenant_id
+                elif isinstance(self.session_manager, AnonymousSessionManager):
+                    session_mgr = await self.session_manager.get_session()
+                    session_mgr.tenant_id = tenant_id
+                    if session_mgr.session_info:
+                        session_mgr.session_info.tenant_id = tenant_id
+
+                # Rebuild endpoints with the discovered tenant
+                endpoints = get_endpoints_for_session(tenant_id=tenant_id)
+                self.endpoints = endpoints
+                conversion_url = endpoints.get("conversion", "")
+                status_url = endpoints.get("status", "")
+                download_url = endpoints.get("download", "")
 
             # Step 2: Start conversion
             logger.info("Starting conversion job...")

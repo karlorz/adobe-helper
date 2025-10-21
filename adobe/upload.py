@@ -141,6 +141,12 @@ class FileUploader:
 
         return self._extract_asset_metadata(response_payload)
 
+    def get_discovered_tenant_id(self) -> str | None:
+        """Get the most recently discovered tenant ID from the discovery cache."""
+        if self._discovery_cache:
+            return self._discovery_cache.get("_discovered_tenant_id")
+        return None
+
     async def upload_with_retry(
         self,
         file_path: Path,
@@ -491,6 +497,15 @@ class FileUploader:
             )
             response.raise_for_status()
             data = self._ensure_dict(response.json(), "discovery")
+
+            # Extract the real tenant ID from the discovery response
+            # The discovery endpoint URLs contain the actual numeric tenant ID
+            tenant_id = self._extract_tenant_from_discovery(data, base_url)
+            if tenant_id:
+                logger.info(f"Discovered numeric tenant ID: {tenant_id}")
+                # Store it for session manager to use
+                data["_discovered_tenant_id"] = tenant_id
+
         except httpx.HTTPStatusError as exc:
             raise UploadError(
                 ERROR_UPLOAD_FAILED.format(reason=f"HTTP {exc.response.status_code}"),
@@ -506,6 +521,26 @@ class FileUploader:
         self._discovery_base = base_url
         self._discovery_expires_at = now + DISCOVERY_TTL_SECONDS
         return data, base_url
+
+    def _extract_tenant_from_discovery(
+        self, discovery_data: dict[str, Any], base_url: str
+    ) -> str | None:
+        """Extract the numeric tenant ID from discovery response URLs."""
+        import re
+
+        # Check resource URIs in the discovery response
+        resources = discovery_data.get("resources", {}).get("assets", {})
+
+        for resource in resources.values():
+            if isinstance(resource, dict):
+                uri = resource.get("uri") or resource.get("href", "")
+                if isinstance(uri, str):
+                    # Extract numeric tenant from URL pattern: /{tenant_id}/
+                    match = re.search(r"/(\d{10,})/", uri)
+                    if match:
+                        return match.group(1)
+
+        return None
 
     def _extract_base_url(self, upload_url: str) -> str:
         parsed = urlparse(upload_url)
