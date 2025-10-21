@@ -336,7 +336,7 @@ def extract_tenant_id_from_token(access_token: str) -> str | None:
 
         for candidate in tenant_candidates:
             if candidate and isinstance(candidate, str) and candidate.strip():
-                return candidate.strip()
+                return str(candidate.strip())
 
         return None
 
@@ -367,7 +367,7 @@ def extract_tenant_from_ims_response(ims_response: dict) -> str | None:
 
     for candidate in tenant_candidates:
         if candidate and isinstance(candidate, str) and candidate.strip():
-            return candidate.strip()
+            return str(candidate.strip())
 
     # Try extracting from access token
     access_token = ims_response.get("access_token")
