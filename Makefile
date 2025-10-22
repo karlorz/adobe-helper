@@ -4,8 +4,16 @@ docker-build:
 	docker build -t adobe-helper -f examples/adobe/Dockerfile .
 
 docker-run: docker-build
+	@PDF_FILE=$${PDF:-document.pdf}; \
+	if [ ! -f "$$PDF_FILE" ]; then \
+		echo "❌ Error: PDF file not found: $$PDF_FILE"; \
+		echo "   Usage: make docker-run PDF=/path/to/your.pdf"; \
+		echo "   Or place document.pdf in current directory"; \
+		exit 1; \
+	fi; \
+	echo "📄 Mounting PDF: $$PDF_FILE"; \
 	docker run --rm \
-		-e ADOBE_HELPER_ENDPOINTS_FILE=/app/docs/discovery/discovered_endpoints.json \
+		-v "$$(realpath $$PDF_FILE):/app/document.pdf:ro" \
 		adobe-helper
 
 # CI - Run all checks (linting, formatting, type checking, tests)

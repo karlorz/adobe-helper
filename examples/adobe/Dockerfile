@@ -11,12 +11,12 @@ WORKDIR /app
 
 RUN uv python install 3.11
 
-COPY pyproject.toml uv.lock ./
+# Install adobe-helper from PyPI
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --all-extras --dev --no-install-project
+    uv venv && \
+    uv pip install adobe-helper
 
-COPY . .
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --all-extras --dev
+# Copy test script
+COPY examples/adobe/basic_usage.py ./basic_usage.py
 
-CMD ["/bin/sh", "-lc", "uv run pytest && uv run python examples/adobe/basic_usage.py"]
+CMD ["/bin/sh", "-lc", "uv run python basic_usage.py"]
