@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.0 (2025-10-22)
+
+### Features
+
+- Embed working Adobe API endpoints as defaults
+  ([`5100bad`](https://github.com/karlorz/adobe-helper/commit/5100bad31c06a8e217d793e1be0ae1ffeefa30c2))
+
+
 ## v1.1.2 (2025-10-21)
 
 
