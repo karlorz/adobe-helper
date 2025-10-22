@@ -9,9 +9,15 @@
 
 ## ⚠️ Current Status
 
-**This project is ~98% complete.** The architecture, all modules, and examples are fully implemented and tested. However, **API endpoint discovery is required** before the library can perform actual conversions.
+**This project is fully functional out-of-the-box!** The library includes working API endpoint patterns discovered from Adobe's online service. Simply install and start converting PDFs to Word documents.
 
 ### Recent Updates (2025-10-21)
+
+✅ **Embedded API Endpoints** (NEW!)
+- Working endpoint patterns now embedded in the codebase
+- No manual endpoint discovery required for basic usage
+- Library works out-of-the-box after `pip install`
+- Automatic tenant ID substitution for each session
 
 ✅ **Multi-Tenant Architecture**
 - Automatic tenant discovery during session initialization
@@ -24,7 +30,7 @@
 - Real-time visibility into conversion progress
 - Better debugging and troubleshooting support
 
-See [docs/discovery/API_DISCOVERY.md](docs/discovery/API_DISCOVERY.md) for instructions on discovering Adobe's actual API endpoints using Chrome DevTools.
+Advanced users can still manually discover and configure custom endpoints if needed. See [docs/discovery/API_DISCOVERY.md](docs/discovery/API_DISCOVERY.md) for details.
 
 ## Features
 

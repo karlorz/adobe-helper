@@ -33,10 +33,6 @@ from adobe.rate_limiter import RateLimiter
 from adobe.session_cycling import AnonymousSessionManager
 from adobe.upload import FileUploader
 from adobe.urls import (
-    API_CONVERT,
-    API_DOWNLOAD,
-    API_STATUS,
-    API_UPLOAD,
     COMMON_HEADERS,
     DEFAULT_USER_AGENT,
     get_api_endpoints,
@@ -243,21 +239,22 @@ class AdobePDFConverter:
             status_url = endpoints.get("status", "")
             download_url = endpoints.get("download", "")
 
+            # Validate that we have all required endpoints
             unresolved = []
-            for name, (url, placeholder) in {
-                "upload": (upload_url, API_UPLOAD),
-                "conversion": (conversion_url, API_CONVERT),
-                "status": (status_url, API_STATUS),
-                "download": (download_url, API_DOWNLOAD),
+            for name, url in {
+                "upload": upload_url,
+                "conversion": conversion_url,
+                "status": status_url,
+                "download": download_url,
             }.items():
-                if not url or url == placeholder:
+                if not url or not url.startswith("https://"):
                     unresolved.append(name)
 
             if unresolved:
                 logger.error("API endpoints not configured: %s", ", ".join(unresolved))
                 raise AdobeHelperError(
-                    "Adobe API endpoints are not configured yet. "
-                    "Capture the real endpoints (see docs/discovery/API_DISCOVERY.md) and update discovered_endpoints.json.",
+                    "Adobe API endpoints are not configured properly. "
+                    "Check your discovered_endpoints.json or environment variables.",
                     details={"missing": ",".join(unresolved)},
                 )
 

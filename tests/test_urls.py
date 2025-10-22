@@ -57,7 +57,7 @@ def test_get_api_endpoints_uses_discovery_file(
 def test_get_api_endpoints_generates_template_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """When no discovery data exists, a template file should be generated with placeholders."""
+    """When no discovery data exists, a template file should be generated with working defaults."""
 
     home_dir = tmp_path / "home"
     _set_home(monkeypatch, home_dir)
@@ -77,8 +77,10 @@ def test_get_api_endpoints_generates_template_when_missing(
     assert template_path.is_file()
 
     template_payload = json.loads(template_path.read_text(encoding="utf-8"))
-    assert template_payload["status"] == "template"
+    assert template_payload["status"] == "defaults"
+    # Should contain working default endpoints now, not empty ones
     for key in ("upload", "conversion", "status", "download"):
         entry = template_payload["endpoints"][key]
-        assert entry["url"] == ""
+        assert entry["url"] != ""  # Should have real URLs
+        assert entry["url"].startswith("https://pdfnow-")
     assert template_payload["instructions"]
